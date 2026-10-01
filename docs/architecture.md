@@ -1,8 +1,8 @@
 # Du plan au rendu, puis à MCP
 
 ```text
-Agent Terra / Hermes (futur)
-  → adaptateur MCP (futur)
+Agent Terra / Hermes / tout client MCP
+  → src/mcp/server.js + src/mcp/tools.js (serveur MCP, stdio)
     → terra-draw render source.json|yaml --out dossier [--mode] [--formats]
       → lecture JSON/YAML (src/source.js)
       → validation JSON Schema + règles par modèle + migration étape 1 (src/validate.js)
@@ -40,7 +40,7 @@ Le pack est lu une fois par process depuis `assets/icons/` (SVG + `manifest.json
 
 `renderDiagram({ source, outDir, width, scale, mode, formats })` expose le moteur complet et renvoie `{ outDir, manifest }`. Les erreurs sont des exceptions ; seul le CLI choisit les codes de sortie. `validateSource(source)` expose la validation seule, sans Chromium, pour `terra-draw validate` et pour des vérifications rapides. Un adaptateur Node peut appeler ces fonctions directement. Tout autre hôte peut lancer `bin/terra-draw.js` avec une liste d'arguments, sans construire de commande shell, puis analyser stdout en JSON.
 
-Le futur adaptateur MCP devra définir son propre répertoire de travail, limiter les chemins et les ressources, sérialiser les écritures vers un même dossier et retourner des références aux artefacts. Le CLI est un outil local de confiance, pas un service multi-utilisateur. Il n'effectue aucun accès à GitHub, Gmail ou Drive : ces noms ne sont que des éléments du schéma ou des alias d'icônes.
+Le serveur MCP (`src/mcp/*`, voir le README) appelle ces mêmes fonctions sans les dupliquer : `render_diagram` délègue à `renderDiagram()`, `create_diagram`/`update_diagram` construisent ou éditent un objet plan puis délèguent à `validateDiagram()` avant d'écrire quoi que ce soit sur disque. Le CLI et le MCP restent des outils locaux de confiance, pas des services multi-utilisateurs : un process MCP par agent, pas de répertoire de travail partagé, pas d'authentification. Ni l'un ni l'autre n'effectue d'accès à GitHub, Gmail ou Drive : ces noms ne sont que des éléments du schéma ou des alias d'icônes.
 
 Les exports sont d'abord écrits dans un dossier temporaire adjacent. Le dossier final n'est remplacé qu'après réussite du rendu. Seuls les dossiers contenant exclusivement des exports reconnus par le manifest peuvent être remplacés. Le manifest contient le nom du fichier source, son format (`json`/`yaml`) et son SHA-256, jamais un chemin absolu local, les empreintes de chaque artefact produit, et le rapport d'icônes. Aucun horodatage volontaire n'est ajouté ; Chromium peut dater le PDF.
 

@@ -1,6 +1,6 @@
 # terra-draw
 
-Un outil local pour transformer un plan **JSON ou YAML** en schéma explicatif **HTML éditable, PNG et PDF**. Quatre modèles (`comparison`, `hub-and-spoke`, `flow`, `cards-table`), trois niveaux d'explication (`visual`, `balanced`, `self_explanatory`), un pack d'icônes vendorisé. Rien n'est téléchargé pendant le rendu.
+Un outil local pour transformer un plan **JSON ou YAML** en schéma explicatif **HTML éditable, PNG et PDF**. Quatre modèles (`comparison`, `hub-and-spoke`, `flow`, `cards-table`), trois niveaux d'explication (`visual`, `balanced`, `self_explanatory`), un pack d'icônes vendorisé. Rien n'est téléchargé pendant le rendu. Un [serveur MCP](#serveur-mcp) local (stdio) expose le même moteur à un agent IA.
 
 ## Installation et premier rendu
 
@@ -98,37 +98,106 @@ Pack vendorisé dans `assets/icons/` (43 pictogrammes tracés pour ce dépôt, l
 
 Les plans `agent` / `branches` / `connectors` de l'étape 1 restent acceptés tels quels (voir [`schema/legacy-comparison.schema.json`](schema/legacy-comparison.schema.json) et [`examples/legacy/mcp-vs-api-etape-1.json`](examples/legacy/mcp-vs-api-etape-1.json)) : ils sont convertis en mémoire vers le format pivot avant rendu, sans aucune différence de sortie. Écrire les nouveaux plans directement au format pivot.
 
-## Structure et future intégration Terra / MCP
+## Structure
 
 ```text
 bin/terra-draw.js           Commandes CLI (render, validate, templates, icons)
+bin/terra-draw-mcp.js        Point d'entrée du serveur MCP (stdio)
 src/source.js               Lecture JSON/YAML
 src/validate.js             JSON Schema, règles par modèle, modes, migration étape 1
+src/introspect.js           listTemplates/listIcons/resolveIcons, partagés par le CLI et le MCP
 src/template.js             Assemblage HTML (en-tête, badges, table, notes, légende)
 src/templates/*.js          Mise en page propre à chaque modèle (comparison, hub-and-spoke, flow, cards-table)
 src/connectors.js           Flèches SVG calculées sur la mise en page réelle (dans Chromium)
 src/icons.js                Résolution et validation du pack d'icônes
 src/palette.js              Les six teintes, seule source de vérité (CSS + SVG)
 src/render.js                API de rendu et orchestration des exports
+src/mcp/tools.js            Logique des 6 outils MCP (fonctions pures, testables sans transport)
+src/mcp/server.js           Déclaration des outils MCP (schémas zod) et câblage vers src/mcp/tools.js
 schema/                     Contrats d'entrée versionnés (pivot + legacy)
 assets/icons/                Pack d'icônes local (SVG, manifest, licence)
 examples/                   Plans éditables (JSON et YAML), un par modèle
-scripts/                    Installation Chromium, rendu des exemples, preview HTTP, vérifications
-test/                       Validation, icônes, exports réels avec Chromium
-docs/architecture.md        Point d'entrée pour un futur adaptateur MCP
+scripts/                    Installation Chromium, rendu des exemples, preview HTTP, vérifications, smoke test MCP
+test/                       Validation, icônes, exports réels avec Chromium, outils et serveur MCP
+docs/architecture.md        Le pipeline de rendu en détail
 ```
 
-Un futur outil MCP pourra exécuter le CLI avec un tableau d'arguments, puis lire son JSON et le manifest. Le même moteur est importable via `renderDiagram({ source, outDir, width, scale, mode, formats })` et `validateSource(source)`. Aucun serveur MCP, éditeur graphique ou appel à un service d'IA n'est implémenté.
+Le moteur est importable directement via `renderDiagram({ source, outDir, width, scale, mode, formats })` et `validateSource(source)` (`src/render.js`) : c'est ce que fait le serveur MCP, et ce que peut faire tout autre adaptateur Node. Un hôte non-Node peut aussi exécuter `bin/terra-draw.js` avec un tableau d'arguments et lire son JSON.
+
+## Serveur MCP
+
+Un serveur [MCP](https://modelcontextprotocol.io) local, en stdio, pour qu'un agent (Terra, Hermes, Claude Code, ou tout autre client MCP) crée, modifie, inspecte et rende des diagrammes sans réimplémenter le moteur. Chaque outil construit ou lit un objet plan au format pivot puis appelle `validateDiagram()` / `renderDiagram()` — exactement ce que fait le CLI. Rien n'est dupliqué : `src/introspect.js` et `src/mcp/tools.js` sont les seuls points d'entrée, et les messages d'erreur sont ceux de `src/validate.js`.
+
+### Lancer le serveur
+
+```bash
+npm run mcp
+```
+
+Le serveur lit et écrit du JSON-RPC sur stdin/stdout ; tout diagnostic (y compris « serveur MCP prêt sur stdio ») part sur stderr, jamais sur stdout. Il s'arrête avec le processus qui l'a lancé : pas de démon, pas de port réseau, pas d'état partagé entre agents.
+
+### Configurer un client MCP
+
+```json
+{
+  "mcpServers": {
+    "terra-draw": {
+      "command": "node",
+      "args": ["/chemin/absolu/vers/terra-draw/bin/terra-draw-mcp.js"]
+    }
+  }
+}
+```
+
+(Format accepté par Claude Code, Claude Desktop et la plupart des clients MCP via `claude mcp add` ou un fichier de configuration équivalent.)
+
+### Les 6 outils
+
+| Outil | Rôle |
+|---|---|
+| `list_templates` | Les 4 modèles, leurs rôles de node et leurs contraintes — lu depuis le moteur, jamais désynchronisé |
+| `list_icons` | Le pack vendoré (43 pictogrammes) et ses ~280 alias |
+| `resolve_icons` | Résout des noms libres (`"Google Drive"`, `"github"`…) vers l'icône réellement utilisée (exacte, alias, ou repli `generic`) |
+| `create_diagram` | Écrit un nouveau plan `.json`/`.yaml` : paramètres structurés (`nodes`/`groups`/`edges`/`table`/…), ou `brief` — une liste courte d'éléments, pour un squelette déterministe limité à `flow` (étapes dans l'ordre) et `hub-and-spoke` (premier élément = centre) |
+| `render_diagram` | Rend un plan existant en HTML/PNG/PDF + manifest, identique au CLI (`--mode`, `--formats`, `--width`, `--scale`) |
+| `update_diagram` | Modifie un plan existant : `set` pour les champs scalaires, `canvas` en fusion, `nodes`/`groups`/`edges` en remplacement complet ou `{ upsert, remove }` par id, `table`/`badges`/`notes`/`legend`/`exports` en remplacement complet |
+
+Chaque outil déclare un schéma d'entrée et de sortie (zod, converti en JSON Schema côté protocole). Une entrée invalide, une référence inconnue ou une modification ambiguë renvoie un résultat `isError: true` avec un message exploitable — jamais une valeur inventée ni un crash silencieux.
+
+Exemple d'appel (`create_diagram` avec un brief) :
+
+```json
+{ "name": "create_diagram", "arguments": {
+  "path": "dist/pipeline.json", "template": "flow", "title": "Du brief au schéma exporté",
+  "brief": ["Brief", "Plan pivot", "Validation", "Rendu exporté"]
+} }
+```
+
+produit un plan `flow` à 4 étapes (edges déduits), identique à un plan écrit à la main avec `role: "step"` pour chaque nœud.
+
+### Vérifier que ça fonctionne
+
+```bash
+npm run mcp:smoke   # Client + serveur réels sur stdio : crée, rend puis modifie un diagramme (Chromium requis)
+npm run check        # Inclut une vérification en mémoire des outils MCP, hors ligne
+npm test              # Inclut test/mcp.test.js : helpers unitaires + intégration stdio bout en bout
+```
+
+### Limites connues du MCP
+
+- Transport stdio uniquement : pas de HTTP/SSE, pas de multi-client, pas d'authentification — un process MCP correspond à un agent local, comme le CLI.
+- `brief` (squelette déterministe) ne couvre que `flow` et `hub-and-spoke` : `comparison` (2 colonnes) et `cards-table` (table obligatoire) demandent des paramètres structurés explicites. Aucun appel à un service d'IA externe n'est fait pour « compléter » un brief.
+- `update_diagram` n'accepte que des opérations explicites et nommées ; toute autre forme est refusée plutôt qu'interprétée. Le format historique (étape 1) n'est pas éditable par cet outil (recréer au format pivot).
 
 ## Vérification
 
 ```bash
-npm run check    # Syntaxe, pack d'icônes, cohérence palette/CSS, modèles, exemples valides — hors ligne, sans Chromium
-npm test          # Rendu réel des 4 exemples, PNG/PDF/HTML, CLI, modes, échappement — avec Chromium
+npm run check    # Syntaxe, pack d'icônes, cohérence palette/CSS, modèles, exemples valides, outils MCP — hors ligne, sans Chromium
+npm test          # Rendu réel des 4 exemples, PNG/PDF/HTML, CLI, modes, échappement, serveur MCP stdio — avec Chromium
 npm run example   # Rend tous les exemples dans dist/
 ```
 
-Les tests lancent le CLI, vérifient les dimensions PNG, le PDF d'une page, les empreintes, l'ouverture HTML sans réseau ni JavaScript, les références invalides, l'échappement, les modes et la protection des fichiers existants. `npm run example` tient lieu de build : JavaScript natif, sans compilation.
+Les tests lancent le CLI, vérifient les dimensions PNG, le PDF d'une page, les empreintes, l'ouverture HTML sans réseau ni JavaScript, les références invalides, l'échappement, les modes et la protection des fichiers existants ; `test/mcp.test.js` fait de même pour les outils MCP, plus un aller-retour stdio réel. `npm run example` tient lieu de build : JavaScript natif, sans compilation.
 
 Les versions npm sont verrouillées. À environnement identique, HTML et PNG sont déterministes ; les métadonnées de création du PDF peuvent changer. La sortie reste un canevas à largeur fixe, redimensionné dans la preview. Les exports, dépendances et caches ne sont pas versionnés. La police Inter est sous licence SIL OFL, conservée dans les artefacts HTML.
 
@@ -137,4 +206,4 @@ Les versions npm sont verrouillées. À environnement identique, HTML et PNG son
 - Pas d'éditeur graphique ni de layout libre : quatre modèles fixes, pensés pour rester lisibles plutôt que pour tout représenter.
 - `flow` est limité à 8 étapes, `hub-and-spoke` à 10 satellites, `comparison` à 2 colonnes : au-delà, découper en plusieurs schémas.
 - YAML est pris en charge pour la lecture ; aucun outil de conversion JSON → YAML n'est fourni.
-- Pas de couche MCP : le CLI est conçu pour être appelé par un futur adaptateur, pas pour en faire office.
+- Le serveur MCP est un adaptateur mince (voir « Limites connues du MCP » ci-dessus) : ni éditeur graphique, ni génération par IA, ni service multi-utilisateur.

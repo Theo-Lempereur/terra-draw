@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
 import { renderDiagram, validateSource } from '../src/render.js';
-import { templates, GENERATOR } from '../src/template.js';
-import { TEMPLATES, MODES, TONES } from '../src/validate.js';
+import { GENERATOR } from '../src/template.js';
+import { MODES, TONES } from '../src/validate.js';
 import { iconNames, iconAliases, iconPack } from '../src/icons.js';
 import { SOURCE_EXTENSIONS } from '../src/source.js';
+import { listTemplates } from '../src/introspect.js';
 
 const USAGE = `terra-draw — schémas explicatifs locaux (${GENERATOR})
 
@@ -50,14 +51,7 @@ try {
   if (values.help || !command) {
     console.log(USAGE);
   } else if (command === 'templates') {
-    const listing = Object.entries(TEMPLATES).map(([name, spec]) => ({
-      template: name,
-      summary: spec.summary,
-      roles: templates[name].meta.roles,
-      requirements: templates[name].meta.needs,
-      modes: Object.keys(MODES),
-      tones: TONES
-    }));
+    const listing = listTemplates();
     console.log(values.json
       ? JSON.stringify(listing, null, 2)
       : listing.map(entry => `${entry.template}\n  ${entry.summary}\n  roles : ${Object.entries(entry.roles).map(([role, help]) => `${role} (${help})`).join(' · ')}\n  ${entry.requirements}`).join('\n\n')
