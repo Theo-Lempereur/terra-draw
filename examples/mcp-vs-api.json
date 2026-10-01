@@ -1,0 +1,63 @@
+{
+  "$schema": "../schema/diagram.schema.json",
+  "version": 1,
+  "template": "comparison",
+  "eyebrow": "TERRA / HERMES · COMPRENDRE LES OUTILS IA",
+  "title": "MCP vs API directe",
+  "subtitle": "Même destination. Deux façons de connecter un agent à ses outils.",
+  "agent": {
+    "id": "agent", "title": "Agent IA / ChatGPT", "icon": "spark",
+    "body": "Une intention : retrouver un document, lire un message ou créer une issue.",
+    "badge": "DANS UNE APPLICATION HÔTE"
+  },
+  "branches": [
+    {
+      "title": "API directe", "tone": "amber",
+      "description": "Une intégration spécifique par service",
+      "cards": [
+        { "id": "direct-contract", "title": "Construire chaque appel", "icon": "code", "body": "Routes, paramètres et formats : le code de l’hôte traduit l’intention pour chaque API.", "badge": "? Contrat à maintenir" },
+        { "id": "direct-auth", "title": "Appeler l’API du service", "icon": "key", "body": "Clé API ou OAuth, permissions, erreurs et évolutions sont gérés par l’intégration.", "badge": "Adaptateur sur mesure" }
+      ],
+      "tools": [
+        { "id": "direct-github", "title": "GitHub", "body": "Issues & code", "icon": "code" },
+        { "id": "direct-gmail", "title": "Gmail", "body": "Messages", "icon": "mail" },
+        { "id": "direct-drive", "title": "Drive", "body": "Documents", "icon": "folder" }
+      ]
+    },
+    {
+      "title": "MCP", "tone": "green",
+      "description": "Un protocole commun pour exposer les outils",
+      "cards": [
+        { "id": "mcp-contract", "title": "Découvrir un contrat d’outil", "icon": "check", "body": "Le client MCP découvre les outils, leurs descriptions et leurs schémas d’entrée.", "badge": "✓ Entrées à valider" },
+        { "id": "mcp-server", "title": "Passer par un serveur MCP", "icon": "server", "body": "Le serveur valide les arguments et traduit l’appel vers le service. L’hôte contrôle l’usage.", "badge": "Interface standardisée" }
+      ],
+      "tools": [
+        { "id": "mcp-github", "title": "GitHub", "body": "Issues & code", "icon": "code" },
+        { "id": "mcp-gmail", "title": "Gmail", "body": "Messages", "icon": "mail" },
+        { "id": "mcp-drive", "title": "Drive", "body": "Documents", "icon": "folder" }
+      ]
+    }
+  ],
+  "connectors": [
+    { "from": "agent", "to": "direct-contract", "tone": "amber", "dashed": true },
+    { "from": "agent", "to": "mcp-contract", "tone": "green" },
+    { "from": "direct-contract", "to": "direct-auth", "tone": "amber", "label": "Appel spécifique", "dashed": true },
+    { "from": "mcp-contract", "to": "mcp-server", "tone": "green", "label": "tools/call · arguments structurés" },
+    { "from": "direct-auth", "to": "direct-github", "tone": "amber" },
+    { "from": "direct-auth", "to": "direct-gmail", "tone": "amber" },
+    { "from": "direct-auth", "to": "direct-drive", "tone": "amber" },
+    { "from": "mcp-server", "to": "mcp-github", "tone": "green" },
+    { "from": "mcp-server", "to": "mcp-gmail", "tone": "green" },
+    { "from": "mcp-server", "to": "mcp-drive", "tone": "green" }
+  ],
+  "comparison": [
+    { "label": "Contrat", "values": ["Défini par chaque API", "Outils décrits via un protocole commun"] },
+    { "label": "Maintenance", "values": ["Adaptateurs gérés côté intégration", "Adaptation aux services côté serveur MCP"] },
+    { "label": "Authentification", "values": ["Clé API / OAuth selon le service", "Toujours nécessaire selon les accès"] }
+  ],
+  "annotation": {
+    "title": "MCP standardise l’interface, pas la confiance.",
+    "body": "Une API directe peut être tout aussi robuste. MCP ne remplace ni les API, ni les permissions, ni les validations de sécurité. Les accès aux services restent à configurer."
+  },
+  "footer": "Lecture simplifiée · Les deux chemins peuvent appeler les mêmes API."
+}
