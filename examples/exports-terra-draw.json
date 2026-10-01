@@ -1,0 +1,82 @@
+{
+  "$schema": "../schema/diagram.schema.json",
+  "version": 1,
+  "template": "cards-table",
+  "mode": "self_explanatory",
+  "eyebrow": "TERRA DRAW · CHOISIR SON EXPORT",
+  "title": "Quatre fichiers, quatre usages",
+  "subtitle": "Un rendu produit toujours le même dossier. Ce schéma se lit seul : il n’a besoin d’aucun commentaire.",
+  "canvas": { "accent": "blue", "edition": "TERRA DRAW / CARDS" },
+  "badges": [
+    { "label": "Un seul dossier de sortie", "icon": "folder", "tone": "blue" },
+    { "label": "Aucune ressource distante", "icon": "lock", "tone": "green" }
+  ],
+  "groups": [
+    { "id": "artefacts", "title": "Les trois rendus", "description": "Ce que l’on montre ou que l’on envoie", "badge": "LISIBLES PAR TOUS", "tone": "blue" },
+    { "id": "tracabilite", "title": "La trace", "description": "Ce que l’on garde pour vérifier", "tone": "green" }
+  ],
+  "nodes": [
+    {
+      "id": "html",
+      "group": "artefacts",
+      "title": "diagram.html",
+      "icon": "browser",
+      "badge": "AUTONOME",
+      "body": "Texte, CSS et SVG dans un seul fichier, polices incluses en base64. Aucun script, aucun CDN : il s’ouvre hors ligne et reste modifiable à la main pour corriger un mot."
+    },
+    {
+      "id": "png",
+      "group": "artefacts",
+      "title": "diagram.png",
+      "icon": "chart",
+      "badge": "À PARTAGER",
+      "body": "Capture pleine hauteur, densité 1, 2 ou 3. C’est le format à coller dans une présentation, un ticket ou une conversation."
+    },
+    {
+      "id": "pdf",
+      "group": "artefacts",
+      "title": "diagram.pdf",
+      "icon": "file",
+      "badge": "À IMPRIMER",
+      "body": "Une seule page aux dimensions exactes du schéma, texte sélectionnable et copiable. Utile pour une annexe ou une impression."
+    },
+    {
+      "id": "manifest",
+      "group": "tracabilite",
+      "title": "manifest.json",
+      "icon": "shield",
+      "badge": "TOUJOURS ÉCRIT",
+      "body": "Modèle, mode, dimensions, version de Chromium, empreinte SHA-256 de la source et de chaque export, et la liste des icônes retombées sur le pictogramme générique."
+    }
+  ],
+  "table": {
+    "eyebrow": "EN PRATIQUE",
+    "caption": "Ce que chaque fichier permet de faire après le rendu",
+    "columns": ["Fichier", "Bon usage", "Modifiable à la main", "Dépend du réseau"],
+    "rows": [
+      { "label": "diagram.html", "values": ["Relire, corriger un mot, archiver", "Oui, c’est du HTML", "Non"] },
+      { "label": "diagram.png", "values": ["Coller dans un support ou un message", "Non, régénérer le plan", "Non"] },
+      { "label": "diagram.pdf", "values": ["Imprimer ou joindre à un document", "Non, régénérer le plan", "Non"] },
+      { "label": "manifest.json", "values": ["Vérifier qu’un export correspond bien à sa source", "Non, il est recalculé", "Non"] }
+    ]
+  },
+  "notes": [
+    {
+      "title": "Modifier le HTML ne déplace pas les flèches.",
+      "body": "Les connecteurs SVG sont calculés à partir des positions réelles des cartes, une fois les polices chargées, puis figés dans le fichier. Changer un texte long dans le HTML exporté décale la mise en page sans recalculer les flèches : pour un changement de fond, modifier le plan et relancer le rendu.",
+      "icon": "warning",
+      "tone": "amber"
+    },
+    {
+      "title": "Le dossier de sortie est protégé.",
+      "body": "terra-draw ne remplace un dossier que s’il ne contient rien d’autre que ses propres exports, reconnus par le manifest. Un dossier contenant un fichier personnel est refusé plutôt qu’écrasé.",
+      "icon": "lock",
+      "tone": "green"
+    }
+  ],
+  "legend": [
+    { "label": "Rendus destinés à être lus", "tone": "blue" },
+    { "label": "Fichier de vérification", "tone": "green" }
+  ],
+  "footer": "npm run render -- examples/exports-terra-draw.json --out dist/exports"
+}

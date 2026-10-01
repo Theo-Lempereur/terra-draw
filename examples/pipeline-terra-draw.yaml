@@ -1,0 +1,124 @@
+# Exemple au format YAML : mêmes champs que le JSON, mêmes règles de validation.
+# Rendu : npm run render -- examples/pipeline-terra-draw.yaml --out dist/pipeline
+$schema: ../schema/diagram.schema.json
+version: 1
+template: flow
+mode: balanced
+
+eyebrow: TERRA DRAW · COMMENT ÇA MARCHE
+title: Du brief au schéma exporté
+subtitle: Cinq étapes, deux phases, une boucle de correction. Tout se passe sur la machine.
+
+canvas:
+  width: 1680
+  accent: purple
+  edition: TERRA DRAW / FLOW
+
+badges:
+  - label: Local first
+    icon: lock
+    tone: green
+  - label: JSON ou YAML
+    icon: file
+    tone: blue
+
+groups:
+  - id: preparer
+    title: Préparer
+    description: Ce qu’écrit un humain ou un agent
+    tone: blue
+  - id: produire
+    title: Produire
+    description: Ce que fait le CLI
+    tone: purple
+
+nodes:
+  - id: brief
+    group: preparer
+    title: Brief
+    icon: book
+    # Une valeur contenant « : » doit être entre guillemets, comme en YAML standard.
+    body: "Une intention écrite en clair : ce que le schéma doit faire comprendre."
+    tone: blue
+  - id: plan
+    group: preparer
+    title: Plan pivot
+    icon: file
+    body: "Un fichier JSON ou YAML : template, mode, nodes, edges, notes, table."
+    tone: blue
+  - id: validation
+    group: produire
+    title: Validation
+    icon: shield
+    body: JSON Schema puis règles du modèle. Chaque erreur nomme le champ fautif.
+    badge: ARRÊT SI INVALIDE
+    tone: purple
+  - id: rendu
+    group: produire
+    title: Rendu Chromium
+    icon: browser
+    body: HTML, CSS et SVG hors ligne. Les flèches sont mesurées sur la mise en page réelle.
+    tone: purple
+  - id: exports
+    group: produire
+    title: Exports
+    icon: box
+    body: diagram.html, diagram.png, diagram.pdf et manifest.json dans le dossier de sortie.
+    tone: green
+
+edges:
+  - from: brief
+    to: plan
+    label: rédaction
+  - from: plan
+    to: validation
+  - from: validation
+    to: rendu
+    label: plan normalisé
+  - from: rendu
+    to: exports
+  - from: exports
+    to: plan
+    label: corriger et relancer
+    dashed: true
+    tone: neutral
+
+table:
+  eyebrow: CE QUI EST VÉRIFIÉ
+  caption: La validation s’arrête à la première passe qui échoue
+  columns:
+    - Étape
+    - Contrôle
+    - Message en cas d’échec
+  rows:
+    - label: Lecture
+      values:
+        - Extension et syntaxe JSON/YAML
+        - Ligne et colonne de l’erreur
+    - label: Schéma
+      values:
+        - Champs, types, longueurs, énumérations
+        - Chemin du champ et valeur reçue
+    - label: Modèle
+      values:
+        - Rôles, groupes, flèches, tableau
+        - Identifiants connus et règle attendue
+
+notes:
+  - title: La boucle est normale.
+    body: Un premier rendu sert surtout à voir ce qui déborde ou ce qui manque. Modifier le plan et relancer coûte quelques secondes ; le dossier de sortie est remplacé seulement si le rendu réussit.
+    icon: refresh
+    tone: neutral
+  - title: Le manifest garde la trace.
+    body: Empreinte SHA-256 de la source et des exports, dimensions, navigateur utilisé, icônes résolues et icônes retombées sur le pictogramme générique.
+    icon: check
+    tone: green
+
+legend:
+  - label: Chaîne principale
+    tone: purple
+  - label: Boucle de correction
+    tone: neutral
+    dashed: true
+
+footer: Schéma produit par terra-draw lui-même · examples/pipeline-terra-draw.yaml

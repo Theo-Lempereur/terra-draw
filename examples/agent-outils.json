@@ -1,0 +1,52 @@
+{
+  "$schema": "../schema/diagram.schema.json",
+  "version": 1,
+  "template": "hub-and-spoke",
+  "mode": "visual",
+  "eyebrow": "TERRA / HERMES · VUE D’ENSEMBLE",
+  "title": "Un agent, six outils",
+  "subtitle": "Support visuel : les textes des cartes sont volontairement masqués en mode visual.",
+  "canvas": { "accent": "purple", "edition": "TERRA DRAW / HUB" },
+  "badges": [
+    { "label": "Rendu local", "icon": "lock", "tone": "green" },
+    { "label": "Aucun appel réseau", "icon": "globe", "tone": "neutral" }
+  ],
+  "nodes": [
+    {
+      "id": "agent",
+      "role": "hub",
+      "title": "Agent IA",
+      "icon": "agent",
+      "badge": "DANS UNE APPLICATION HÔTE",
+      "body": "Reçoit une intention en langage naturel et choisit l’outil à appeler.",
+      "tone": "purple"
+    },
+    { "id": "github", "title": "GitHub", "icon": "github", "body": "Issues, pull requests et code.", "tone": "neutral" },
+    { "id": "gmail", "title": "Gmail", "icon": "gmail", "body": "Lecture et envoi de messages.", "tone": "blue" },
+    { "id": "drive", "title": "Drive", "icon": "drive", "body": "Documents partagés de l’équipe.", "tone": "amber" },
+    { "id": "calendrier", "title": "Calendrier", "icon": "calendar", "body": "Disponibilités et rendez-vous.", "tone": "rose" },
+    { "id": "base", "title": "Base de données", "icon": "database", "body": "Lecture seule sur les tables métier.", "tone": "green" },
+    { "id": "mcp", "title": "Serveur MCP", "icon": "mcp", "body": "Expose les outils derrière un contrat commun.", "tone": "purple" }
+  ],
+  "edges": [
+    { "from": "agent", "to": "github" },
+    { "from": "agent", "to": "gmail" },
+    { "from": "agent", "to": "drive" },
+    { "from": "agent", "to": "calendrier" },
+    { "from": "agent", "to": "base", "label": "lecture seule" },
+    { "from": "agent", "to": "mcp" }
+  ],
+  "notes": [
+    {
+      "title": "Chaque flèche reste un accès à configurer.",
+      "body": "Le schéma montre les outils atteignables, pas les permissions accordées. Authentification, portée et journalisation restent à définir outil par outil.",
+      "icon": "shield",
+      "tone": "neutral"
+    }
+  ],
+  "legend": [
+    { "label": "Outil interne", "tone": "green" },
+    { "label": "Service externe", "tone": "blue" }
+  ],
+  "footer": "Vue simplifiée · Les outils réellement disponibles dépendent de l’hôte."
+}
