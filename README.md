@@ -1,6 +1,6 @@
 # terra-draw
 
-Un outil local pour transformer un plan **JSON ou YAML** en schéma explicatif **HTML éditable, PNG et PDF**. Quatre modèles (`comparison`, `hub-and-spoke`, `flow`, `cards-table`), trois niveaux d'explication (`visual`, `balanced`, `self_explanatory`), un pack d'icônes vendorisé. Rien n'est téléchargé pendant le rendu. Un [serveur MCP](#serveur-mcp) local (stdio) expose le même moteur à un agent IA.
+Un outil local pour transformer un plan **JSON ou YAML** en schéma explicatif **HTML éditable, PNG et PDF**. Quatre modèles (`comparison`, `hub-and-spoke`, `flow`, `cards-table`), trois niveaux d'explication (`visual`, `balanced`, `self_explanatory`), un pack d'icônes vendorisé. Rien n'est téléchargé pendant le rendu. Un [serveur MCP](#serveur-mcp--un-seul-outil-draw) local (stdio) donne à un agent IA un seul outil, `draw`, qui rend une image visuelle en un appel.
 
 ## Installation et premier rendu
 
@@ -112,8 +112,10 @@ src/connectors.js           Flèches SVG calculées sur la mise en page réelle 
 src/icons.js                Résolution et validation du pack d'icônes
 src/palette.js              Les six teintes, seule source de vérité (CSS + SVG)
 src/render.js                API de rendu et orchestration des exports
-src/mcp/tools.js            Logique des 6 outils MCP (fonctions pures, testables sans transport)
-src/mcp/server.js           Déclaration des outils MCP (schémas zod) et câblage vers src/mcp/tools.js
+src/draw.js                 Mode visuel de l'outil draw : plan tolérant, 5 dispositions, Chromium gardé chaud
+src/visual-icons.js         Choix automatique logo de marque / pictogramme Lucide / initiale
+src/mcp/tools.js            Helpers du format pivot (créer, rendre, modifier) pour d'autres adaptateurs
+src/mcp/server.js           Le serveur MCP : un seul outil, draw
 schema/                     Contrats d'entrée versionnés (pivot + legacy)
 assets/icons/                Pack d'icônes local (SVG, manifest, licence)
 examples/                   Plans éditables (JSON et YAML), un par modèle
@@ -122,72 +124,58 @@ test/                       Validation, icônes, exports réels avec Chromium, o
 docs/architecture.md        Le pipeline de rendu en détail
 ```
 
-Le moteur est importable directement via `renderDiagram({ source, outDir, width, scale, mode, formats })` et `validateSource(source)` (`src/render.js`) : c'est ce que fait le serveur MCP, et ce que peut faire tout autre adaptateur Node. Un hôte non-Node peut aussi exécuter `bin/terra-draw.js` avec un tableau d'arguments et lire son JSON.
+Le moteur est importable directement via `renderDiagram({ source, outDir, width, scale, mode, formats })` et `validateSource(source)` (`src/render.js`) : ce que peut utiliser tout adaptateur Node (le serveur MCP, lui, passe par `src/draw.js`). Un hôte non-Node peut aussi exécuter `bin/terra-draw.js` avec un tableau d'arguments et lire son JSON.
 
-## Serveur MCP
+## Serveur MCP : un seul outil, `draw`
 
-Un serveur [MCP](https://modelcontextprotocol.io) local, en stdio, pour qu'un agent (Terra, Hermes, Claude Code, ou tout autre client MCP) crée, modifie, inspecte et rende des diagrammes sans réimplémenter le moteur. Chaque outil construit ou lit un objet plan au format pivot puis appelle `validateDiagram()` / `renderDiagram()` — exactement ce que fait le CLI. Rien n'est dupliqué : `src/introspect.js` et `src/mcp/tools.js` sont les seuls points d'entrée, et les messages d'erreur sont ceux de `src/validate.js`.
+Un serveur [MCP](https://modelcontextprotocol.io) local (stdio) pour qu'un agent **montre** une image en
+même temps qu'il parle, en **un appel** : pas de fichier de plan, pas de rendu séparé, pas de vérification.
+Visuel d'abord : grandes vignettes, peu de texte, icônes et logos **choisis automatiquement** d'après le
+libellé. PNG rendu en ~0,1 à 0,3 s : Chromium reste chaud dans le serveur entre deux dessins (fermé après
+10 min d'inactivité).
 
-### Lancer le serveur
-
-```bash
-npm run mcp
+```json
+{ "name": "draw", "arguments": {
+  "title": "Tes mails ce matin",
+  "items": [
+    { "label": "Newsletter Promo", "note": "Boutique · 08:12", "status": "supprimé" },
+    { "label": "Devis site vitrine", "note": "Claire Martin", "status": "brouillon", "preview": "Bonjour Claire…" },
+    { "label": "Accès à l'API", "note": "Teo du Colombier", "status": "en attente" } ] } }
 ```
 
-Le serveur lit et écrit du JSON-RPC sur stdin/stdout ; tout diagnostic (y compris « serveur MCP prêt sur stdio ») part sur stderr, jamais sur stdout. Il s'arrête avec le processus qui l'a lancé : pas de démon, pas de port réseau, pas d'état partagé entre agents.
+| Champ | Rôle |
+|---|---|
+| `title`, `subtitle` | Titre (obligatoire) et sous-titre |
+| `items` | 1 à 15 éléments : objets `{ label, note?, icon?, status?, preview?, group? }` ou simples textes |
+| `layout` | `flow` (étapes), `hub` (1er élément au centre), `compare` (2 colonnes, `columns` + `group: 1\|2`), `grid`, `list` (lignes à statut). Deviné s'il manque |
+| `status` | nouveau, non lu, lu, répondu, envoyé, brouillon, en attente, supprimé, modifié, fait, à faire, erreur, urgent, archivé, programmé, en cours (ou texte libre) |
+
+Le résultat contient `MEDIA:<chemin du PNG>` : la gateway Hermes joint alors l'image à la réponse (Discord)
+sans que l'agent ait à s'en occuper. Les PNG (et le plan `.json` à côté) vont dans `~/terra/drawings/`
+(`TERRA_DRAW_OUT` pour changer). Démo de toutes les dispositions : `node scripts/draw-demo.js`.
+
+**Icônes** (`src/visual-icons.js`) : logo de marque [Simple Icons](https://simpleicons.org) (CC0, ~3 400) quand
+un nom propre est reconnu (Gmail, Discord, GitHub, Stripe, Google Drive…) ; sinon pictogramme
+[Lucide](https://lucide.dev) (ISC, ~1 900) via un dictionnaire français puis les mots-clés anglais de Lucide ;
+sinon une pastille à l'initiale. Jamais de pictogramme « + » générique. Tout est lu dans `node_modules` :
+aucun rendu ne fait de requête réseau.
+
+Le format pivot complet (4 modèles, tableaux, notes, PDF, HTML éditable) reste disponible en CLI
+(`terra-draw render`) et via `src/mcp/tools.js` pour d'autres adaptateurs.
 
 ### Configurer un client MCP
 
 ```json
-{
-  "mcpServers": {
-    "terra-draw": {
-      "command": "node",
-      "args": ["/chemin/absolu/vers/terra-draw/bin/terra-draw-mcp.js"]
-    }
-  }
-}
+{ "mcpServers": { "terra-draw": { "command": "node", "args": ["/chemin/absolu/vers/terra-draw/bin/terra-draw-mcp.js"] } } }
 ```
-
-(Format accepté par Claude Code, Claude Desktop et la plupart des clients MCP via `claude mcp add` ou un fichier de configuration équivalent.)
-
-### Les 6 outils
-
-| Outil | Rôle |
-|---|---|
-| `list_templates` | Les 4 modèles, leurs rôles de node et leurs contraintes — lu depuis le moteur, jamais désynchronisé |
-| `list_icons` | Le pack vendoré (43 pictogrammes) et ses ~280 alias |
-| `resolve_icons` | Résout des noms libres (`"Google Drive"`, `"github"`…) vers l'icône réellement utilisée (exacte, alias, ou repli `generic`) |
-| `create_diagram` | Écrit un nouveau plan `.json`/`.yaml` : paramètres structurés (`nodes`/`groups`/`edges`/`table`/…), ou `brief` — une liste courte d'éléments, pour un squelette déterministe limité à `flow` (étapes dans l'ordre) et `hub-and-spoke` (premier élément = centre) |
-| `render_diagram` | Rend un plan existant en HTML/PNG/PDF + manifest, identique au CLI (`--mode`, `--formats`, `--width`, `--scale`) |
-| `update_diagram` | Modifie un plan existant : `set` pour les champs scalaires, `canvas` en fusion, `nodes`/`groups`/`edges` en remplacement complet ou `{ upsert, remove }` par id, `table`/`badges`/`notes`/`legend`/`exports` en remplacement complet |
-
-Chaque outil déclare un schéma d'entrée et de sortie (zod, converti en JSON Schema côté protocole). Une entrée invalide, une référence inconnue ou une modification ambiguë renvoie un résultat `isError: true` avec un message exploitable — jamais une valeur inventée ni un crash silencieux.
-
-Exemple d'appel (`create_diagram` avec un brief) :
-
-```json
-{ "name": "create_diagram", "arguments": {
-  "path": "dist/pipeline.json", "template": "flow", "title": "Du brief au schéma exporté",
-  "brief": ["Brief", "Plan pivot", "Validation", "Rendu exporté"]
-} }
-```
-
-produit un plan `flow` à 4 étapes (edges déduits), identique à un plan écrit à la main avec `role: "step"` pour chaque nœud.
 
 ### Vérifier que ça fonctionne
 
 ```bash
-npm run mcp:smoke   # Client + serveur réels sur stdio : crée, rend puis modifie un diagramme (Chromium requis)
-npm run check        # Inclut une vérification en mémoire des outils MCP, hors ligne
-npm test              # Inclut test/mcp.test.js : helpers unitaires + intégration stdio bout en bout
+npm run mcp:smoke   # Client + serveur réels sur stdio : un draw par disposition, chronométré
+npm run check       # Vérifie en mémoire l'outil exposé et sa description, hors ligne
+npm test            # Inclut test/draw.test.js (icônes, statuts, rendu) et l'intégration stdio
 ```
-
-### Limites connues du MCP
-
-- Transport stdio uniquement : pas de HTTP/SSE, pas de multi-client, pas d'authentification — un process MCP correspond à un agent local, comme le CLI.
-- `brief` (squelette déterministe) ne couvre que `flow` et `hub-and-spoke` : `comparison` (2 colonnes) et `cards-table` (table obligatoire) demandent des paramètres structurés explicites. Aucun appel à un service d'IA externe n'est fait pour « compléter » un brief.
-- `update_diagram` n'accepte que des opérations explicites et nommées ; toute autre forme est refusée plutôt qu'interprétée. Le format historique (étape 1) n'est pas éditable par cet outil (recréer au format pivot).
 
 ## Vérification
 

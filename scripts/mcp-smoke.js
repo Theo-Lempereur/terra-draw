@@ -1,59 +1,37 @@
-// Exemple vérifiable d'utilisation du serveur MCP : un vrai client s'y connecte
-// en stdio (comme le ferait Terra, Hermes ou Claude Code), liste les outils,
-// crée un plan depuis un brief, le rend réellement (Chromium hors ligne), puis
-// lui applique une modification explicite. Lancer avec `npm run mcp:smoke`.
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+// Smoke test du serveur MCP via un vrai client stdio : un `draw` par disposition, chronométré.
+// Usage : npm run mcp:smoke   (images dans un dossier temporaire, chemin affiché)
+import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
-const root = fileURLToPath(new URL('../', import.meta.url));
-const server = path.join(root, 'bin/terra-draw-mcp.js');
-
-function call(client, name, args) {
-  console.log(`\n→ tools/call ${name} ${JSON.stringify(args)}`);
-  return client.callTool({ name, arguments: args });
-}
-
-function report(result) {
-  if (result.isError) {
-    console.error(`  ✗ ${result.content[0].text}`);
-    throw new Error(`Appel d'outil en échec : ${result.content[0].text}`);
-  }
-  console.log(`  ✓ ${JSON.stringify(result.structuredContent)}`);
-  return result.structuredContent;
-}
-
 const dir = await mkdtemp(path.join(tmpdir(), 'terra-draw-mcp-smoke-'));
-const transport = new StdioClientTransport({ command: process.execPath, args: [server], cwd: root });
-const client = new Client({ name: 'terra-draw-mcp-smoke', version: '0' });
+const transport = new StdioClientTransport({
+  command: process.execPath, args: [fileURLToPath(new URL('../bin/terra-draw-mcp.js', import.meta.url))],
+  env: { ...process.env, TERRA_DRAW_OUT: dir }
+});
+const client = new Client({ name: 'terra-draw-smoke', version: '0' });
+await client.connect(transport);
+const { tools } = await client.listTools();
+console.log(`Outils exposés : ${tools.map(tool => tool.name).join(', ')}`);
 
-try {
-  await client.connect(transport);
-
-  const { tools } = await client.listTools();
-  console.log(`Outils exposés : ${tools.map(tool => tool.name).join(', ')}`);
-
-  const planPath = path.join(dir, 'pipeline.json');
-  const created = report(await call(client, 'create_diagram', {
-    path: planPath, template: 'flow', title: 'Du brief au schéma exporté (smoke MCP)',
-    brief: ['Brief', 'Plan pivot', 'Validation', 'Rendu exporté']
-  }));
-
-  const outDir = path.join(dir, 'export');
-  const rendered = report(await call(client, 'render_diagram', { source: created.path, outDir, scale: 1 }));
-
-  report(await call(client, 'update_diagram', {
-    source: created.path, set: { footer: 'Rendu via le smoke test MCP de terra-draw.' }
-  }));
-
-  const manifest = JSON.parse(await readFile(rendered.manifestPath, 'utf8'));
-  console.log(`\nFichiers produits :\n${rendered.files.map(file => `  - ${file.path} (${file.bytes} octets)`).join('\n')}`);
-  console.log(`Manifest généré par ${manifest.generator}, gabarit ${manifest.template}, mode ${manifest.mode}.`);
-  console.log('\nSmoke test MCP terminé avec succès.');
-} finally {
-  await client.close().catch(() => {});
-  await rm(dir, { recursive: true, force: true });
+const plans = [
+  { title: 'Étapes', items: ['Théo demande', 'Agent Terra', 'Rendu Chromium', 'Image sur Discord'] },
+  { title: 'Tes mails', items: [{ label: 'Promo', status: 'supprimé' }, { label: 'Devis', status: 'brouillon', preview: 'Bonjour…' }] },
+  { title: 'Centre', layout: 'hub', items: ['Terra', 'Gmail', 'Discord', 'GitHub'] },
+  { title: 'Comparaison', columns: ['MCP', 'API'], items: [{ label: 'Outils typés', group: 1 }, { label: 'Requêtes HTTP', group: 2 }] },
+  { title: 'Grille', layout: 'grid', items: ['React', 'Docker', 'Stripe'] }
+];
+let failed = 0;
+for (const plan of plans) {
+  const started = performance.now();
+  const result = await client.callTool({ name: 'draw', arguments: plan });
+  const text = result.content?.[0]?.text ?? '';
+  if (result.isError) failed += 1;
+  console.log(`${result.isError ? 'KO' : 'ok'} ${Math.round(performance.now() - started)} ms (aller-retour MCP) · ${text.split('\n').reverse().join(' · ')}`);
 }
+await client.close();
+console.log(failed ? `\n${failed} échec(s).` : `\nSmoke test MCP terminé avec succès. Images : ${dir}`);
+process.exitCode = failed ? 1 : 0;

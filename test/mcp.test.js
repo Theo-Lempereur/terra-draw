@@ -140,41 +140,29 @@ test('render_diagram : rend réellement un plan et retourne des chemins absolus'
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test('serveur MCP stdio : create_diagram puis render_diagram via un vrai processus', { timeout: 120000 }, async () => {
+test('serveur MCP stdio : un seul outil, draw, qui rend un PNG en un appel', { timeout: 120000 }, async () => {
   const dir = await temp('stdio');
-  const transport = new StdioClientTransport({ command: process.execPath, args: [server] });
+  const transport = new StdioClientTransport({
+    command: process.execPath, args: [server], env: { ...process.env, TERRA_DRAW_OUT: dir }
+  });
   const client = new Client({ name: 'terra-draw-mcp-test', version: '0' });
   try {
     await client.connect(transport);
-
     const { tools } = await client.listTools();
-    assert.deepEqual(tools.map(tool => tool.name).sort(),
-      ['create_diagram', 'list_icons', 'list_templates', 'render_diagram', 'resolve_icons', 'update_diagram']);
+    assert.deepEqual(tools.map(tool => tool.name), ['draw']);
 
-    const planPath = path.join(dir, 'plan.json');
-    const created = await client.callTool({
-      name: 'create_diagram',
-      arguments: { path: planPath, template: 'hub-and-spoke', title: 'Test stdio', brief: ['Centre', 'A', 'B', 'C'] }
+    const drawn = await client.callTool({
+      name: 'draw', arguments: { title: 'Test stdio', layout: 'hub', items: [{ label: 'Terra' }, { label: 'Gmail' }, { label: 'Agenda' }] }
     });
-    assert.equal(created.isError, undefined, created.content?.[0]?.text);
+    assert.equal(drawn.isError, undefined, drawn.content?.[0]?.text);
+    const png = drawn.content[0].text.match(/^MEDIA:(\S+\.png)$/m)?.[1];
+    assert.ok(png && png.startsWith(dir), drawn.content[0].text);
+    assert.ok((await stat(png)).size > 0);
+    assert.deepEqual((await readdir(dir)).map(name => path.extname(name)).sort(), ['.json', '.png']);
 
-    const outDir = path.join(dir, 'out');
-    const rendered = await client.callTool({ name: 'render_diagram', arguments: { source: planPath, outDir, scale: 1 } });
-    assert.equal(rendered.isError, undefined, rendered.content?.[0]?.text);
-    assert.deepEqual((await readdir(outDir)).sort(), ['diagram.html', 'diagram.pdf', 'diagram.png', 'manifest.json']);
-    for (const file of rendered.structuredContent.files) {
-      assert.ok(path.isAbsolute(file.path));
-      assert.ok((await stat(file.path)).size > 0);
-    }
-
-    // outDir est requis par le schéma d'entrée zod : l'erreur vient du serveur
-    // (validation de forme) avant même d'atteindre notre code (src/mcp/tools.js).
-    const missingOutDir = await client.callTool({ name: 'render_diagram', arguments: { source: planPath } });
-    assert.equal(missingOutDir.isError, true);
-    assert.match(missingOutDir.content[0].text, /outDir/);
-
-    const badTool = await client.callTool({ name: 'create_diagram', arguments: { path: planPath, title: 'x' } });
-    assert.equal(badTool.isError, true);
+    // items est requis par le schéma : erreur lisible, pas de plantage.
+    const bad = await client.callTool({ name: 'draw', arguments: { title: 'x' } });
+    assert.equal(bad.isError, true);
   } finally {
     await client.close().catch(() => {});
     await rm(dir, { recursive: true, force: true });

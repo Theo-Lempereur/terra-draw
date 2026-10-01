@@ -24,7 +24,7 @@ export const escapeHtml = value => String(value).replace(/[&<>"']/g, character =
 }[character]));
 
 let embeddedFonts;
-function fonts() {
+export function fonts() {
   embeddedFonts ??= [400, 600, 700].map(weight => {
     const file = readFileSync(require.resolve(`@fontsource/inter/files/inter-latin-${weight}-normal.woff2`)).toString('base64');
     return `@font-face{font-family:Inter;font-style:normal;font-weight:${weight};src:url(data:font/woff2;base64,${file}) format('woff2');font-display:block;}`;
