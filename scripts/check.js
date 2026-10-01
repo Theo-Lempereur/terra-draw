@@ -6,11 +6,14 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { iconPack, iconNames, resolveIcon, FALLBACK_ICON } from '../src/icons.js';
 import { PALETTE } from '../src/palette.js';
 import { TEMPLATES, TONES } from '../src/validate.js';
 import { templates } from '../src/template.js';
 import { validateSource } from '../src/render.js';
+import { createServer } from '../src/mcp/server.js';
 
 const exec = promisify(execFile);
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -71,6 +74,25 @@ for (const example of examples) {
 }
 report('les quatre modèles sont illustrés',
   Object.keys(TEMPLATES).every(name => covered.has(name)) ? null : `manquant(s) : ${Object.keys(TEMPLATES).filter(name => !covered.has(name)).join(', ')}`);
+
+// Serveur MCP : l'outil exposé, en mémoire — sans Chromium ni stdio.
+try {
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const mcpServer = createServer();
+  const client = new Client({ name: 'terra-draw-check', version: '0' });
+  await Promise.all([mcpServer.connect(serverTransport), client.connect(clientTransport)]);
+
+  const { tools } = await client.listTools();
+  report('serveur MCP : un seul outil, draw', tools.map(tool => tool.name).join() === 'draw'
+    ? null : `reçu ${tools.map(tool => tool.name)}`);
+  const description = tools[0]?.description ?? '';
+  report('serveur MCP : description de draw autonome et courte',
+    /flow/.test(description) && /status/.test(description) && description.length < 1500 ? null : `${description.length} caractères`);
+  const bad = await client.callTool({ name: 'draw', arguments: { title: 'x' } });
+  report('serveur MCP : entrée invalide renvoyée comme erreur exploitable (pas une exception)', bad.isError ? null : 'isError absent');
+
+  await client.close();
+} catch (error) { report('serveur MCP', error.message.replaceAll('\n', ' ')); }
 
 console.log(ok.map(line => `  ok  ${line}`).join('\n'));
 if (failures.length) {

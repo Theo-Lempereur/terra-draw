@@ -1,6 +1,6 @@
 # terra-draw
 
-Un outil local pour transformer un plan **JSON ou YAML** en schéma explicatif **HTML éditable, PNG et PDF**. Quatre modèles (`comparison`, `hub-and-spoke`, `flow`, `cards-table`), trois niveaux d'explication (`visual`, `balanced`, `self_explanatory`), un pack d'icônes vendorisé. Rien n'est téléchargé pendant le rendu.
+Un outil local pour transformer un plan **JSON ou YAML** en schéma explicatif **HTML éditable, PNG et PDF**. Quatre modèles (`comparison`, `hub-and-spoke`, `flow`, `cards-table`), trois niveaux d'explication (`visual`, `balanced`, `self_explanatory`), un pack d'icônes vendorisé. Rien n'est téléchargé pendant le rendu. Un [serveur MCP](#serveur-mcp--un-seul-outil-draw) local (stdio) donne à un agent IA un seul outil, `draw`, qui rend une image visuelle en un appel.
 
 ## Installation et premier rendu
 
@@ -98,37 +98,94 @@ Pack vendorisé dans `assets/icons/` (43 pictogrammes tracés pour ce dépôt, l
 
 Les plans `agent` / `branches` / `connectors` de l'étape 1 restent acceptés tels quels (voir [`schema/legacy-comparison.schema.json`](schema/legacy-comparison.schema.json) et [`examples/legacy/mcp-vs-api-etape-1.json`](examples/legacy/mcp-vs-api-etape-1.json)) : ils sont convertis en mémoire vers le format pivot avant rendu, sans aucune différence de sortie. Écrire les nouveaux plans directement au format pivot.
 
-## Structure et future intégration Terra / MCP
+## Structure
 
 ```text
 bin/terra-draw.js           Commandes CLI (render, validate, templates, icons)
+bin/terra-draw-mcp.js        Point d'entrée du serveur MCP (stdio)
 src/source.js               Lecture JSON/YAML
 src/validate.js             JSON Schema, règles par modèle, modes, migration étape 1
+src/introspect.js           listTemplates/listIcons/resolveIcons, partagés par le CLI et le MCP
 src/template.js             Assemblage HTML (en-tête, badges, table, notes, légende)
 src/templates/*.js          Mise en page propre à chaque modèle (comparison, hub-and-spoke, flow, cards-table)
 src/connectors.js           Flèches SVG calculées sur la mise en page réelle (dans Chromium)
 src/icons.js                Résolution et validation du pack d'icônes
 src/palette.js              Les six teintes, seule source de vérité (CSS + SVG)
 src/render.js                API de rendu et orchestration des exports
+src/draw.js                 Mode visuel de l'outil draw : plan tolérant, 5 dispositions, Chromium gardé chaud
+src/visual-icons.js         Choix automatique logo de marque / pictogramme Lucide / initiale
+src/mcp/tools.js            Helpers du format pivot (créer, rendre, modifier) pour d'autres adaptateurs
+src/mcp/server.js           Le serveur MCP : un seul outil, draw
 schema/                     Contrats d'entrée versionnés (pivot + legacy)
 assets/icons/                Pack d'icônes local (SVG, manifest, licence)
 examples/                   Plans éditables (JSON et YAML), un par modèle
-scripts/                    Installation Chromium, rendu des exemples, preview HTTP, vérifications
-test/                       Validation, icônes, exports réels avec Chromium
-docs/architecture.md        Point d'entrée pour un futur adaptateur MCP
+scripts/                    Installation Chromium, rendu des exemples, preview HTTP, vérifications, smoke test MCP
+test/                       Validation, icônes, exports réels avec Chromium, outils et serveur MCP
+docs/architecture.md        Le pipeline de rendu en détail
 ```
 
-Un futur outil MCP pourra exécuter le CLI avec un tableau d'arguments, puis lire son JSON et le manifest. Le même moteur est importable via `renderDiagram({ source, outDir, width, scale, mode, formats })` et `validateSource(source)`. Aucun serveur MCP, éditeur graphique ou appel à un service d'IA n'est implémenté.
+Le moteur est importable directement via `renderDiagram({ source, outDir, width, scale, mode, formats })` et `validateSource(source)` (`src/render.js`) : ce que peut utiliser tout adaptateur Node (le serveur MCP, lui, passe par `src/draw.js`). Un hôte non-Node peut aussi exécuter `bin/terra-draw.js` avec un tableau d'arguments et lire son JSON.
+
+## Serveur MCP : un seul outil, `draw`
+
+Un serveur [MCP](https://modelcontextprotocol.io) local (stdio) pour qu'un agent **montre** une image en
+même temps qu'il parle, en **un appel** : pas de fichier de plan, pas de rendu séparé, pas de vérification.
+Visuel d'abord : grandes vignettes, peu de texte, icônes et logos **choisis automatiquement** d'après le
+libellé. PNG rendu en ~0,1 à 0,3 s : Chromium reste chaud dans le serveur entre deux dessins (fermé après
+10 min d'inactivité).
+
+```json
+{ "name": "draw", "arguments": {
+  "title": "Tes mails ce matin",
+  "items": [
+    { "label": "Newsletter Promo", "note": "Boutique · 08:12", "status": "supprimé" },
+    { "label": "Devis site vitrine", "note": "Claire Martin", "status": "brouillon", "preview": "Bonjour Claire…" },
+    { "label": "Accès à l'API", "note": "Teo du Colombier", "status": "en attente" } ] } }
+```
+
+| Champ | Rôle |
+|---|---|
+| `title`, `subtitle` | Titre (obligatoire) et sous-titre |
+| `items` | 1 à 15 éléments : objets `{ label, note?, icon?, status?, preview?, group? }` ou simples textes |
+| `layout` | `flow` (étapes), `hub` (1er élément au centre), `compare` (2 colonnes, `columns` + `group: 1\|2`), `grid`, `list` (lignes à statut). Deviné s'il manque |
+| `status` | nouveau, non lu, lu, répondu, envoyé, brouillon, en attente, supprimé, modifié, fait, à faire, erreur, urgent, archivé, programmé, en cours (ou texte libre) |
+
+Le résultat contient `MEDIA:<chemin du PNG>` : la gateway Hermes joint alors l'image à la réponse (Discord)
+sans que l'agent ait à s'en occuper. Les PNG (et le plan `.json` à côté) vont dans `~/terra/drawings/`
+(`TERRA_DRAW_OUT` pour changer). Démo de toutes les dispositions : `node scripts/draw-demo.js`.
+
+**Icônes** (`src/visual-icons.js`) : logo de marque [Simple Icons](https://simpleicons.org) (CC0, ~3 400) quand
+un nom propre est reconnu (Gmail, Discord, GitHub, Stripe, Google Drive…) ; sinon pictogramme
+[Lucide](https://lucide.dev) (ISC, ~1 900) via un dictionnaire français puis les mots-clés anglais de Lucide ;
+sinon une pastille à l'initiale. Jamais de pictogramme « + » générique. Tout est lu dans `node_modules` :
+aucun rendu ne fait de requête réseau.
+
+Le format pivot complet (4 modèles, tableaux, notes, PDF, HTML éditable) reste disponible en CLI
+(`terra-draw render`) et via `src/mcp/tools.js` pour d'autres adaptateurs.
+
+### Configurer un client MCP
+
+```json
+{ "mcpServers": { "terra-draw": { "command": "node", "args": ["/chemin/absolu/vers/terra-draw/bin/terra-draw-mcp.js"] } } }
+```
+
+### Vérifier que ça fonctionne
+
+```bash
+npm run mcp:smoke   # Client + serveur réels sur stdio : un draw par disposition, chronométré
+npm run check       # Vérifie en mémoire l'outil exposé et sa description, hors ligne
+npm test            # Inclut test/draw.test.js (icônes, statuts, rendu) et l'intégration stdio
+```
 
 ## Vérification
 
 ```bash
-npm run check    # Syntaxe, pack d'icônes, cohérence palette/CSS, modèles, exemples valides — hors ligne, sans Chromium
-npm test          # Rendu réel des 4 exemples, PNG/PDF/HTML, CLI, modes, échappement — avec Chromium
+npm run check    # Syntaxe, pack d'icônes, cohérence palette/CSS, modèles, exemples valides, outils MCP — hors ligne, sans Chromium
+npm test          # Rendu réel des 4 exemples, PNG/PDF/HTML, CLI, modes, échappement, serveur MCP stdio — avec Chromium
 npm run example   # Rend tous les exemples dans dist/
 ```
 
-Les tests lancent le CLI, vérifient les dimensions PNG, le PDF d'une page, les empreintes, l'ouverture HTML sans réseau ni JavaScript, les références invalides, l'échappement, les modes et la protection des fichiers existants. `npm run example` tient lieu de build : JavaScript natif, sans compilation.
+Les tests lancent le CLI, vérifient les dimensions PNG, le PDF d'une page, les empreintes, l'ouverture HTML sans réseau ni JavaScript, les références invalides, l'échappement, les modes et la protection des fichiers existants ; `test/mcp.test.js` fait de même pour les outils MCP, plus un aller-retour stdio réel. `npm run example` tient lieu de build : JavaScript natif, sans compilation.
 
 Les versions npm sont verrouillées. À environnement identique, HTML et PNG sont déterministes ; les métadonnées de création du PDF peuvent changer. La sortie reste un canevas à largeur fixe, redimensionné dans la preview. Les exports, dépendances et caches ne sont pas versionnés. La police Inter est sous licence SIL OFL, conservée dans les artefacts HTML.
 
@@ -137,4 +194,4 @@ Les versions npm sont verrouillées. À environnement identique, HTML et PNG son
 - Pas d'éditeur graphique ni de layout libre : quatre modèles fixes, pensés pour rester lisibles plutôt que pour tout représenter.
 - `flow` est limité à 8 étapes, `hub-and-spoke` à 10 satellites, `comparison` à 2 colonnes : au-delà, découper en plusieurs schémas.
 - YAML est pris en charge pour la lecture ; aucun outil de conversion JSON → YAML n'est fourni.
-- Pas de couche MCP : le CLI est conçu pour être appelé par un futur adaptateur, pas pour en faire office.
+- Le serveur MCP est un adaptateur mince (voir « Limites connues du MCP » ci-dessus) : ni éditeur graphique, ni génération par IA, ni service multi-utilisateur.

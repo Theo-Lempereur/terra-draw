@@ -2,7 +2,7 @@
   "name": "terra-draw",
   "version": "0.2.0",
   "private": true,
-  "description": "Schémas explicatifs locaux : un format pivot JSON/YAML, quatre modèles, export HTML, PNG et PDF.",
+  "description": "Schémas explicatifs locaux : un format pivot JSON/YAML, quatre modèles, export HTML, PNG et PDF, un serveur MCP en stdio.",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -20,14 +20,20 @@
     "browser:install": "node scripts/install-browser.js",
     "dev": "node scripts/preview.js",
     "start": "node scripts/preview.js",
+    "mcp": "node bin/terra-draw-mcp.js",
+    "mcp:smoke": "node scripts/mcp-smoke.js",
     "test": "node --test",
     "check": "node scripts/check.js"
   },
   "dependencies": {
     "@fontsource/inter": "5.3.0",
+    "@modelcontextprotocol/sdk": "1.31.0",
     "ajv": "8.20.0",
+    "lucide-static": "^1.49.0",
     "playwright": "1.63.0",
-    "yaml": "2.9.1"
+    "simple-icons": "^16.33.0",
+    "yaml": "2.9.1",
+    "zod": "3.25.76"
   },
   "devDependencies": {
     "pdf-lib": "1.17.1"
