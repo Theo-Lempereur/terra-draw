@@ -1,70 +1,204 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Terra Draw — comparison v1",
+  "$id": "https://github.com/Theo-Lempereur/terra-draw/schema/diagram.schema.json",
+  "title": "Terra Draw — format pivot v1",
+  "description": "Plan d’un schéma explicatif. Un seul contrat pour tous les modèles : nodes + edges, plus des blocs optionnels (badges, notes, table, legend). Les règles propres à chaque modèle sont vérifiées en plus du schéma et renvoient des messages explicites.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["version", "template", "title", "agent", "branches", "connectors"],
+  "required": ["version", "template", "title", "nodes"],
   "properties": {
-    "$schema": { "type": "string" },
-    "version": { "const": 1 },
-    "template": { "const": "comparison" },
+    "$schema": { "type": "string", "description": "Ignoré au rendu ; pratique pour l’autocomplétion dans un éditeur." },
+    "version": { "const": 1, "description": "Version du format pivot. Seule la valeur 1 existe." },
+    "template": {
+      "enum": ["comparison", "hub-and-spoke", "flow", "cards-table"],
+      "description": "comparison : deux chemins mis en regard. hub-and-spoke : un centre et ses satellites. flow : une suite d’étapes de gauche à droite. cards-table : une grille de cartes au-dessus d’un tableau."
+    },
+    "mode": {
+      "enum": ["visual", "balanced", "self_explanatory"],
+      "default": "balanced",
+      "description": "Niveau d’explication. visual : pictogrammes et flèches, presque pas de texte. balanced : pictogrammes, titres courts et quelques annotations. self_explanatory : tout le texte, notes et tableau, le schéma se lit seul."
+    },
     "title": { "$ref": "#/definitions/text" },
     "subtitle": { "$ref": "#/definitions/text" },
-    "eyebrow": { "$ref": "#/definitions/text" },
-    "agent": { "$ref": "#/definitions/card" },
-    "branches": {
-      "type": "array", "minItems": 2, "maxItems": 2,
+    "eyebrow": { "$ref": "#/definitions/shortText", "description": "Surtitre au-dessus du titre, souvent en capitales." },
+    "canvas": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Réglages de support. Les options du CLI (--width, --scale) sont prioritaires.",
+      "properties": {
+        "width": { "type": "integer", "minimum": 1200, "maximum": 2400, "default": 1440 },
+        "scale": { "enum": [1, 2, 3], "default": 2, "description": "Facteur de densité du PNG." },
+        "accent": { "$ref": "#/definitions/tone", "default": "purple", "description": "Teinte par défaut des éléments sans tone." },
+        "edition": { "$ref": "#/definitions/shortText", "description": "Mention discrète en haut à droite." }
+      }
+    },
+    "exports": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Formats à produire. Par défaut les trois, plus manifest.json qui est toujours écrit.",
+      "properties": {
+        "formats": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": { "enum": ["html", "png", "pdf"] },
+          "default": ["html", "png", "pdf"]
+        }
+      }
+    },
+    "groups": {
+      "type": "array",
+      "maxItems": 4,
+      "description": "Colonnes de comparison, ou phases de flow. Chaque node s’y rattache par group.",
       "items": {
-        "type": "object", "additionalProperties": false,
-        "required": ["title", "tone", "description", "cards", "tools"],
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title"],
         "properties": {
+          "id": { "$ref": "#/definitions/id" },
           "title": { "$ref": "#/definitions/text" },
           "description": { "$ref": "#/definitions/text" },
-          "tone": { "enum": ["amber", "green", "purple", "neutral"] },
-          "cards": { "type": "array", "minItems": 1, "maxItems": 4, "items": { "$ref": "#/definitions/card" } },
-          "tools": { "type": "array", "minItems": 1, "maxItems": 4, "items": { "$ref": "#/definitions/card" } }
+          "badge": { "$ref": "#/definitions/shortText" },
+          "tone": { "$ref": "#/definitions/tone" }
         }
       }
+    },
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 24,
+      "description": "Les blocs du schéma. role dépend du modèle ; il est déduit quand il est absent.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title"],
+        "properties": {
+          "id": { "$ref": "#/definitions/id" },
+          "title": { "$ref": "#/definitions/text" },
+          "body": { "$ref": "#/definitions/text", "description": "Phrase d’explication. Masquée en mode visual." },
+          "icon": { "$ref": "#/definitions/iconName" },
+          "badge": { "$ref": "#/definitions/shortText" },
+          "tone": { "$ref": "#/definitions/tone" },
+          "group": { "$ref": "#/definitions/id", "description": "Identifiant d’un élément de groups." },
+          "role": {
+            "enum": ["source", "step", "tool", "hub", "spoke", "card"],
+            "description": "comparison : source (entrée unique), step, tool. hub-and-spoke : hub, spoke. flow : step. cards-table : card."
+          }
+        }
+      }
+    },
+    "edges": {
+      "type": "array",
+      "maxItems": 60,
+      "description": "Flèches. Omettre ce champ laisse le modèle les déduire (chaîne pour flow, hub vers chaque spoke, etc.).",
+      "items": { "$ref": "#/definitions/edge" }
     },
     "connectors": {
-      "type": "array", "minItems": 1, "maxItems": 40,
+      "type": "array",
+      "maxItems": 60,
+      "description": "Synonyme accepté de edges, pour compatibilité. Ne pas fournir les deux.",
+      "items": { "$ref": "#/definitions/edge" }
+    },
+    "badges": {
+      "type": "array",
+      "maxItems": 6,
+      "description": "Pastilles d’en-tête, sous le titre.",
       "items": {
-        "type": "object", "additionalProperties": false, "required": ["from", "to"],
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["label"],
         "properties": {
-          "from": { "$ref": "#/definitions/id" }, "to": { "$ref": "#/definitions/id" },
-          "label": { "type": "string", "minLength": 1, "maxLength": 48 },
-          "dashed": { "type": "boolean" },
-          "tone": { "enum": ["amber", "green", "purple", "neutral"] }
+          "label": { "$ref": "#/definitions/shortText" },
+          "icon": { "$ref": "#/definitions/iconName" },
+          "tone": { "$ref": "#/definitions/tone" }
         }
       }
     },
-    "comparison": {
-      "type": "array", "minItems": 1, "maxItems": 6,
+    "notes": {
+      "type": "array",
+      "maxItems": 4,
+      "description": "Encadrés d’explication en bas du schéma. Au plus un est conservé en mode visual.",
       "items": {
-        "type": "object", "additionalProperties": false, "required": ["label", "values"],
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["body"],
+        "properties": {
+          "title": { "$ref": "#/definitions/text" },
+          "body": { "$ref": "#/definitions/longText" },
+          "icon": { "$ref": "#/definitions/iconName" },
+          "tone": { "$ref": "#/definitions/tone" }
+        }
+      }
+    },
+    "table": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rows"],
+      "description": "Tableau de synthèse. Masqué en mode visual. columns inclut l’en-tête de la colonne d’étiquettes.",
+      "properties": {
+        "eyebrow": { "$ref": "#/definitions/shortText" },
+        "caption": { "$ref": "#/definitions/text" },
+        "columns": { "type": "array", "minItems": 2, "maxItems": 5, "items": { "$ref": "#/definitions/text" } },
+        "rows": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["label", "values"],
+            "properties": {
+              "label": { "$ref": "#/definitions/text" },
+              "values": { "type": "array", "minItems": 1, "maxItems": 4, "items": { "$ref": "#/definitions/text" } }
+            }
+          }
+        }
+      }
+    },
+    "legend": {
+      "type": "array",
+      "maxItems": 6,
+      "description": "Légende des couleurs et des styles de flèches.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["label"],
         "properties": {
           "label": { "$ref": "#/definitions/text" },
-          "values": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "$ref": "#/definitions/text" } }
+          "tone": { "$ref": "#/definitions/tone" },
+          "dashed": { "type": "boolean" }
         }
       }
-    },
-    "annotation": {
-      "type": "object", "additionalProperties": false, "required": ["title", "body"],
-      "properties": { "title": { "$ref": "#/definitions/text" }, "body": { "$ref": "#/definitions/text" } }
     },
     "footer": { "$ref": "#/definitions/text" }
   },
   "definitions": {
-    "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,47}$" },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,47}$",
+      "description": "Minuscules, chiffres et tirets, commençant par une lettre. Exemple : mcp-server."
+    },
+    "shortText": { "type": "string", "minLength": 1, "maxLength": 72 },
     "text": { "type": "string", "minLength": 1, "maxLength": 320 },
-    "card": {
-      "type": "object", "additionalProperties": false, "required": ["id", "title"],
+    "longText": { "type": "string", "minLength": 1, "maxLength": 600 },
+    "tone": { "enum": ["amber", "green", "purple", "blue", "rose", "neutral"] },
+    "iconName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 48,
+      "description": "Nom du pack local (terra-draw icons). Un nom inconnu reçoit le pictogramme generic."
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to"],
       "properties": {
-        "id": { "$ref": "#/definitions/id" },
-        "title": { "$ref": "#/definitions/text" },
-        "body": { "$ref": "#/definitions/text" },
-        "icon": { "type": "string", "minLength": 1, "maxLength": 40 },
-        "badge": { "type": "string", "minLength": 1, "maxLength": 64 }
+        "from": { "$ref": "#/definitions/id" },
+        "to": { "$ref": "#/definitions/id" },
+        "label": { "$ref": "#/definitions/shortText" },
+        "tone": { "$ref": "#/definitions/tone" },
+        "dashed": { "type": "boolean" }
       }
     }
   }
