@@ -19,6 +19,24 @@ const demos = [
   { title: 'MCP ou API ?', columns: ['MCP', 'API classique'], items: [
     { label: 'Outils typés', group: 1 }, { label: 'L’agent découvre seul', group: 1 },
     { label: 'Requêtes HTTP', group: 2 }, { label: 'Code à écrire', group: 2 }] },
+  { title: 'Terra : un cœur, trois façons de l’installer', layout: 'tree', items: [
+    { label: 'Terra', note: 'Master, mémoire, agents et outils' },
+    { label: 'Mode serveur', note: 'Le cœur tourne sur echo, même PC éteint', icon: 'server', parent: 'Terra' },
+    { label: 'Agents et modules', note: 'Master, mémoire, Discord, mails, suivi', parent: 'Mode serveur' },
+    { label: 'API protégée', note: 'Via Tailscale seulement, jeton obligatoire', parent: 'Mode serveur' },
+    { label: 'Mode client', note: 'Le PC affiche et agit, relié à echo', icon: 'laptop', parent: 'Terra' },
+    { label: 'Voix et île', parent: 'Mode client' }, { label: 'Agent PC', parent: 'Mode client' },
+    { label: 'Mode tout local', note: 'Tout sur le PC, sans serveur', icon: 'house', parent: 'Terra' },
+    { label: 'Dispo seulement PC allumé', icon: 'power', parent: 'Mode tout local' }] },
+  { title: 'Du clic dans l’île à l’action sur Windows', layout: 'route',
+    zones: [{ label: 'PC Windows', note: 'Île · voix · agent PC' }, { label: 'Serveur echo', note: 'Master · mémoire · outils' }],
+    items: [
+      { label: 'Théo demande dans l’île', note: '« ouvre mon rapport de stage »', from: 'PC' },
+      { label: 'La demande part vers echo', note: 'Canal privé, jeton de la console', from: 'PC', to: 'echo', via: 'Tailscale' },
+      { label: 'Le master choisit l’outil', from: 'echo' },
+      { label: 'Appel de l’agent PC', note: 'Jeton PC, outils autorisés seulement', from: 'echo', to: 'PC', via: 'Tailscale' },
+      { label: 'Accord dans l’île', from: 'PC', status: 'en attente' },
+      { label: 'Résultat renvoyé', note: 'Succès, refus ou indisponible', from: 'PC', to: 'echo' }] },
   { title: 'La stack du projet', layout: 'grid', items: ['React', 'Node.js', 'PostgreSQL', 'Docker', 'Tailscale', 'Stripe', 'GitHub', 'Vercel'] }
 ];
 

@@ -59,3 +59,53 @@ test('draw : PNG rendu vite, navigateur réutilisé', { timeout: 60000 }, async 
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test('normalizeSpec : parent → tree, from/to ou zones → route', () => {
+  assert.equal(normalizeSpec({ title: 'a', items: ['Racine', { label: 'x', parent: 'Racine' }] }).layout, 'tree');
+  assert.equal(normalizeSpec({ title: 'a', items: [{ label: 'x', from: 'PC', to: 'Serveur' }] }).layout, 'route');
+  assert.equal(normalizeSpec({ title: 'a', zones: ['PC'], items: ['x'] }).layout, 'route');
+  const spec = normalizeSpec({ title: 'a', zones: ['PC', { label: 'Serveur', note: 'echo' }], items: [{ label: 'x', parent: 1, via: 'Tailscale' }] });
+  assert.deepEqual([spec.items[0].parent, spec.items[0].via, spec.zones[1].note], ['1', 'Tailscale', 'echo']);
+});
+
+test('tree : une racine, branches numérotées et colorées, boucles et parents inconnus tolérés', () => {
+  const { html } = buildHtml(normalizeSpec({ title: 'T', layout: 'tree', items: [
+    'Terra', { label: 'Serveur', parent: 'Terra' }, { label: 'Client', parent: 1 },
+    { label: 'API', parent: 'serveur' }, { label: 'Voix', parent: 'Client' }, { label: 'Agent', parent: 'Inconnu' },
+    { label: 'A', parent: 'B' }, { label: 'B', parent: 'A' }] }));
+  assert.match(html, /data-wires/);
+  assert.match(html, /window\.__wire/);
+  // Plusieurs racines (Terra, Agent, et A ou B) : ce sont elles qui sont numérotées.
+  assert.equal((html.match(/class="tnum"/g) ?? []).length, 3);
+  const single = buildHtml(normalizeSpec({ title: 'T', layout: 'tree', items: [
+    'Terra', { label: 'Serveur', parent: 'Terra' }, { label: 'Client', parent: 'Terra' }, { label: 'API', parent: 'Serveur' }] })).html;
+  assert.deepEqual(single.match(/<span class="tnum">\d+<\/span>/g), ['<span class="tnum">1</span>', '<span class="tnum">2</span>']);
+  assert.match(single, /tnode d0 tone-neutral/);
+  assert.match(single, /tnode d2 tone-blue/);
+});
+
+test('route : zones retrouvées par nom partiel ou numéro, trajets et actions sur place', () => {
+  const { html, icons } = buildHtml(normalizeSpec({ title: 'T', zones: ['PC Windows', 'Serveur echo'], items: [
+    { label: 'Demande', from: 'pc' }, { label: 'Envoi', from: 'PC', to: 'echo', via: 'Tailscale' },
+    { label: 'Retour', from: 2, to: 1 }, { label: 'Ailleurs', from: 'Téléphone', to: 'PC' }] }));
+  assert.equal((html.match(/class="zone /g) ?? []).length, 3, 'zone inconnue ajoutée');
+  assert.equal((html.match(/class="act /g) ?? []).length, 1);
+  assert.match(html, /class="hop tone-blue right" style="grid-column:1 \/ 3/);
+  assert.match(html, /class="hop tone-green left"/);
+  assert.match(html, /class="hop tone-amber left" style="grid-column:1 \/ 4/);
+  assert.match(html, /class="via"/);
+  assert.equal(icons.length, 4);
+});
+
+test('draw : tree et route rendus en PNG', { timeout: 60000 }, async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'terra-draw-test-'));
+  try {
+    const tree = await draw({ title: 'Modes', items: ['Terra', { label: 'Serveur', parent: 'Terra' }, { label: 'API', parent: 'Serveur' }] }, { outDir: dir });
+    const route = await draw({ title: 'Trajet', items: [{ label: 'Envoi', from: 'PC', to: 'Serveur' }, { label: 'Calcul', from: 'Serveur' }] }, { outDir: dir });
+    assert.deepEqual([tree.layout, route.layout], ['tree', 'route']);
+    assert.ok((await stat(tree.png)).size > 10000 && (await stat(route.png)).size > 10000);
+  } finally {
+    await closeDraw();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

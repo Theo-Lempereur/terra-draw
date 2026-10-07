@@ -59,7 +59,12 @@ const FR = {
   yaml: 'braces', html: 'code-xml', valideur: 'shield-check', format: 'braces', etat: 'activity',
   suivi: 'activity', historique: 'history', archive: 'archive', archiver: 'archive', partage: 'share-2',
   publication: 'megaphone', annonce: 'megaphone', offre: 'tag', vente: 'shopping-cart', achat: 'shopping-cart',
-  commande_: 'shopping-cart', produit: 'box', stock: 'boxes', usine: 'factory', bureau: 'building'
+  commande_: 'shopping-cart', produit: 'box', stock: 'boxes', usine: 'factory', bureau: 'building',
+  pc: 'laptop', ordinateur: 'laptop', portable: 'laptop', machine: 'computer', poste: 'monitor', windows: 'monitor',
+  vps: 'server', hote: 'server', interface: 'app-window', accord: 'shield-check', autorisation: 'shield-check',
+  autoriser: 'shield-check', permission: 'shield-check', execution: 'square-terminal', executer: 'square-terminal',
+  lancer: 'play', ouvrir: 'folder-open', ouverture: 'folder-open', resultat: 'clipboard-check', retour: 'undo-2',
+  coeur: 'heart', hierarchie: 'network', arbre: 'network', mode: 'toggle-right'
 };
 
 const STOP = new Set(['de', 'du', 'des', 'le', 'la', 'les', 'un', 'une', 'et', 'ou', 'en', 'au',

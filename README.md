@@ -112,7 +112,7 @@ src/connectors.js           Flèches SVG calculées sur la mise en page réelle 
 src/icons.js                Résolution et validation du pack d'icônes
 src/palette.js              Les six teintes, seule source de vérité (CSS + SVG)
 src/render.js                API de rendu et orchestration des exports
-src/draw.js                 Mode visuel de l'outil draw : plan tolérant, 5 dispositions, Chromium gardé chaud
+src/draw.js                 Mode visuel de l'outil draw : plan tolérant, 7 dispositions, Chromium gardé chaud
 src/visual-icons.js         Choix automatique logo de marque / pictogramme Lucide / initiale
 src/mcp/tools.js            Helpers du format pivot (créer, rendre, modifier) pour d'autres adaptateurs
 src/mcp/server.js           Le serveur MCP : un seul outil, draw
@@ -146,12 +146,13 @@ libellé. PNG rendu en ~0,1 à 0,3 s : Chromium reste chaud dans le serveur entr
 | Champ | Rôle |
 |---|---|
 | `title`, `subtitle` | Titre (obligatoire) et sous-titre |
-| `items` | 1 à 15 éléments : objets `{ label, note?, icon?, status?, preview?, group? }` ou simples textes |
-| `layout` | `flow` (étapes), `hub` (1er élément au centre), `compare` (2 colonnes, `columns` + `group: 1\|2`), `grid`, `list` (lignes à statut). Deviné s'il manque |
+| `items` | 1 à 15 éléments : objets `{ label, note?, icon?, status?, preview?, group?, parent?, from?, to?, via? }` ou simples textes |
+| `layout` | `tree` (hiérarchie fléchée, `parent` = libellé ou numéro du parent, branches numérotées), `route` (trajets entre machines : `zones` en colonnes, `from` → `to` en flèche, `via` = canal, `from` seul = action sur place), `flow` (étapes), `hub` (1er élément au centre), `compare` (2 colonnes, `columns` + `group: 1\|2`), `grid`, `list` (lignes à statut). Deviné s'il manque |
+| `zones` | `route` : 1 à 4 machines ou acteurs, textes ou `{ label, note?, icon? }`. Déduites de `from`/`to` si absentes |
 | `status` | nouveau, non lu, lu, répondu, envoyé, brouillon, en attente, supprimé, modifié, fait, à faire, erreur, urgent, archivé, programmé, en cours (ou texte libre) |
 
-Le résultat contient `MEDIA:<chemin du PNG>` : la gateway Hermes joint alors l'image à la réponse (Discord)
-sans que l'agent ait à s'en occuper. Les PNG (et le plan `.json` à côté) vont dans `~/terra/drawings/`
+Le résultat contient `MEDIA:<chemin du PNG>` : l'agent recopie cette ligne dans sa réponse et la gateway
+Hermes joint alors l'image (Discord, île, console) ; elle ne le fait pas seule pour un outil MCP. Les PNG (et le plan `.json` à côté) vont dans `~/terra/drawings/`
 (`TERRA_DRAW_OUT` pour changer). Démo de toutes les dispositions : `node scripts/draw-demo.js`.
 
 **Icônes** (`src/visual-icons.js`) : logo de marque [Simple Icons](https://simpleicons.org) (CC0, ~3 400) quand

@@ -10,8 +10,9 @@ import { fonts } from './template.js';
 import { PALETTE, PAPER } from './palette.js';
 import { fold, lucideSvg, pickIcon } from './visual-icons.js';
 
-export const LAYOUTS = ['flow', 'hub', 'compare', 'grid', 'list'];
+export const LAYOUTS = ['flow', 'hub', 'compare', 'grid', 'list', 'tree', 'route'];
 const TONES = ['blue', 'green', 'amber', 'purple', 'rose'];
+const MAX_ZONES = 4;
 const MAX_ITEMS = 15;
 
 // Statuts : clé canonique → libellé, pictogramme, ton. Les alias (français, anglais) y mènent.
@@ -60,17 +61,41 @@ export function normalizeSpec(input = {}) {
       icon: entry.icon ? clip(entry.icon, 40) : '',
       status: statusOf(entry.status),
       preview: clip(entry.preview, 220),
-      group: entry.group === 2 || entry.group === '2' || fold(entry.group) === fold(input.columns?.[1]) ? 2 : 1
+      group: entry.group === 2 || entry.group === '2' || fold(entry.group) === fold(input.columns?.[1]) ? 2 : 1,
+      parent: ref(entry.parent),
+      from: ref(entry.from),
+      to: ref(entry.to),
+      via: clip(entry.via, 30)
     }))
     .filter(entry => entry.label);
   if (!items.length) throw new Error('items doit contenir au moins un élément avec un label.');
   const columns = Array.isArray(input.columns) ? input.columns.slice(0, 2).map(c => clip(c, 40)) : [];
+  const zones = (Array.isArray(input.zones) ? input.zones : []).slice(0, MAX_ZONES)
+    .map(zone => (typeof zone === 'string' ? { label: zone } : zone ?? {}))
+    .map(zone => ({ label: clip(zone.label ?? zone.name, 40), note: clip(zone.note, 80), icon: zone.icon ? clip(zone.icon, 40) : '' }))
+    .filter(zone => zone.label);
   let layout = LAYOUTS.includes(input.layout) ? input.layout : null;
-  layout ??= items.some(i => i.status || i.preview) ? 'list'
-    : columns.length === 2 || rawItems.some(i => i?.group) ? 'compare'
-      : items.length <= 6 ? 'flow' : 'grid';
+  layout ??= items.some(i => i.from !== '' || i.to !== '') || zones.length ? 'route'
+    : items.some(i => i.parent !== '') ? 'tree'
+      : items.some(i => i.status || i.preview) ? 'list'
+        : columns.length === 2 || rawItems.some(i => i?.group) ? 'compare'
+          : items.length <= 6 ? 'flow' : 'grid';
   if (layout === 'hub' && items.length < 3) layout = 'flow';
-  return { title, subtitle: clip(input.subtitle, 140), layout, items, columns };
+  return { title, subtitle: clip(input.subtitle, 140), layout, items, columns, zones };
+}
+
+// Référence vers un autre élément ou une zone : un libellé, ou un numéro (1 = le premier).
+const ref = value => (typeof value === 'number' ? String(value) : clip(value, 60));
+
+/** Retrouve `value` dans `list` (par numéro, libellé exact, puis libellé contenu dans l'autre). */
+function lookup(list, value) {
+  if (!value) return -1;
+  if (/^\d+$/.test(value)) return Number(value) >= 1 && Number(value) <= list.length ? Number(value) - 1 : -1;
+  const key = fold(value).replace(/[^a-z0-9]+/g, ' ').trim();
+  const keys = list.map(entry => fold(entry.label).replace(/[^a-z0-9]+/g, ' ').trim());
+  const exact = keys.indexOf(key);
+  if (exact !== -1) return exact;
+  return key ? keys.findIndex(other => other && (other.includes(key) || key.includes(other))) : -1;
 }
 
 const esc = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -132,8 +157,125 @@ ${placed.map(({ item, x, y }) => `<div class="pin" style="left:${x.toFixed(1)}px
   },
   list(spec) {
     return { html: `<div class="list">${spec.items.map(i => row(i)).join('')}</div>`, width: 1200 };
+  },
+  tree(spec) {
+    // Chaque élément pointe vers son parent (libellé ou numéro) ; sans parent, c'est une racine.
+    const nodes = spec.items.map((item, id) => ({ ...item, id, kids: [], up: null }));
+    const roots = [];
+    for (const node of nodes) {
+      const index = node.parent ? lookup(nodes, node.parent) : -1;
+      let parent = index === -1 || index === node.id ? null : nodes[index];
+      for (let p = parent; p; p = p.up) if (p === node) { parent = null; break; }   // pas de boucle
+      if (parent) { node.up = parent; parent.kids.push(node); } else roots.push(node);
+    }
+    // Une seule racine : elle est le sommet, ses enfants sont numérotés et chacun donne sa couleur à
+    // sa branche. Plusieurs racines : ce sont elles, côte à côte, qui sont numérotées.
+    const paint = (node, tone) => { node.tone = tone; node.kids.forEach(kid => paint(kid, tone)); };
+    const heads = roots.length === 1 ? roots[0].kids : roots;
+    if (roots.length === 1) roots[0].tone = 'neutral';
+    heads.forEach((node, index) => { paint(node, TONES[index % TONES.length]); node.number = index + 1; });
+    const top = roots.length === 1 ? roots[0] : null;
+
+    const render = (node, depth) => {
+      const leaves = node.kids.length > 0 && node.kids.every(kid => !kid.kids.length);
+      const stack = leaves && (depth >= 1 || node.kids.length > 6 || !top);
+      const level = node === top ? 0 : depth === 0 || node.up === top ? 1 : 2;
+      const card = `<div class="tnode d${level} tone-${node.tone}">${node.number ? `<span class="tnum">${node.number}</span>` : ''}
+${art(node, level === 0 ? '' : 'small')}<div class="ttext"><div class="label">${esc(node.label)}</div>${node.note ? `<div class="note">${esc(node.note)}</div>` : ''}</div>${stamp(node.status)}</div>`;
+      const kids = node.kids.length ? `<div class="kids">${node.kids.map(kid => render(kid, depth + 1).html).join('')}</div>` : '';
+      return { html: `<div class="branch${stack ? ' stack' : ''}">${card}${kids}</div>`, width: stack || !node.kids.length ? 380 : 0 };
+    };
+    // Largeur estimée : une colonne par feuille posée côte à côte (les piles de feuilles = une colonne).
+    const span = (node, depth) => {
+      const stack = node.kids.length > 0 && node.kids.every(kid => !kid.kids.length) && (depth >= 1 || node.kids.length > 6 || !top);
+      return stack || !node.kids.length ? 420 : Math.max(420, node.kids.reduce((sum, kid) => sum + span(kid, depth + 1) + 40, -40));
+    };
+    const width = roots.reduce((sum, root) => sum + span(root, 0) + 48, -48);
+    return { html: `<div class="tree" data-wires><svg class="wires"></svg>${roots.map(root => render(root, 0).html).join('')}</div>`, width: Math.max(1100, width + 128) };
+  },
+  route(spec) {
+    // Des machines (zones) en colonnes, chacune avec sa ligne de vie ; chaque étape est soit un trajet
+    // d'une zone à l'autre (flèche), soit une action sur place (carte posée sur la ligne de vie).
+    const zones = spec.zones.map(zone => ({ ...zone }));
+    const zoneOf = value => {
+      if (!value) return -1;
+      const index = lookup(zones, value);
+      if (index !== -1 || /^\d+$/.test(value) || zones.length >= MAX_ZONES) return index;
+      zones.push({ label: value, note: '', icon: '' });
+      return zones.length - 1;
+    };
+    const steps = spec.items.map(item => {
+      const from = zoneOf(item.from), to = zoneOf(item.to);
+      return { ...item, from, to };
+    });
+    if (!zones.length) zones.push({ label: 'Ici', note: '', icon: '' });
+    zones.forEach((zone, index) => { zone.tone = TONES[index % TONES.length]; zone.art = pickIcon(zone); });
+    const n = zones.length;
+    const col = n <= 2 ? 470 : n === 3 ? 410 : 350;
+    const head = zones.map((zone, index) => `<div class="zone tone-${zone.tone}" style="grid-column:${index + 1};grid-row:1">
+${art(zone, 'big')}<div class="label">${esc(zone.label)}</div>${zone.note ? `<div class="note">${esc(zone.note)}</div>` : ''}</div>
+<div class="life tone-${zone.tone}" style="grid-column:${index + 1};grid-row:2 / ${steps.length + 2}"></div>`).join('');
+    const body = steps.map((step, index) => {
+      const row = index + 2, number = `<span class="snum">${index + 1}</span>`;
+      const note = step.note ? `<div class="note">${esc(step.note)}</div>` : '';
+      const travels = step.from !== -1 && step.to !== -1 && step.from !== step.to;
+      if (!travels) {
+        const at = step.from !== -1 ? step.from : Math.max(step.to, 0);
+        return `<div class="act tone-${zones[at].tone}" style="grid-column:${at + 1};grid-row:${row}">${number}${art(step, 'small')}
+<div class="ttext"><div class="label">${esc(step.label)}</div>${note}</div>${stamp(step.status)}</div>`;
+      }
+      const left = Math.min(step.from, step.to), right = Math.max(step.from, step.to);
+      const via = step.via ? `<span class="via">${art({ art: pickIcon({ label: step.via }) }, 'mini')}${esc(step.via)}</span>` : '';
+      return `<div class="hop tone-${zones[step.from].tone} ${step.to > step.from ? 'right' : 'left'}" style="grid-column:${left + 1} / ${right + 2};grid-row:${row}">
+<div class="hop-label">${number}${esc(step.label)}${stamp(step.status)}</div><div class="hop-line">${HEAD}${via}</div>${note}</div>`;
+    }).join('');
+    return { html: `<div class="route" style="--col:${col}px;--n:${n}">${head}${body}</div>`, width: n * col + 128 };
   }
 };
+
+const HEAD = '<svg class="head" viewBox="0 0 20 24" aria-hidden="true"><path d="M3 3l14 9-14 9" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+/**
+ * Exécutée DANS la page, une fois les polices prêtes : trace les flèches de l'arbre d'après les
+ * positions réelles des cartes (coudes arrondis parent → enfant, ou épine latérale pour une pile).
+ */
+function wireTrees() {
+  for (const host of document.querySelectorAll('[data-wires]')) {
+    const box = host.getBoundingClientRect();
+    const at = el => {
+      const r = el.getBoundingClientRect();
+      return { l: r.left - box.left, r: r.right - box.left, t: r.top - box.top, b: r.bottom - box.top, cx: r.left - box.left + r.width / 2, cy: r.top - box.top + r.height / 2 };
+    };
+    let out = '';
+    for (const branch of host.querySelectorAll('.branch')) {
+      const kids = branch.querySelectorAll(':scope > .kids > .branch > .tnode');
+      if (!kids.length) continue;
+      const p = at(branch.querySelector(':scope > .tnode'));
+      const area = at(branch.querySelector(':scope > .kids'));
+      for (const kid of kids) {
+        const k = at(kid);
+        const color = getComputedStyle(kid).getPropertyValue('--line').trim();
+        let d, tip;
+        if (branch.classList.contains('stack')) {
+          const x = area.l + 26, r = 14, end = k.l - 3;
+          d = `M${x} ${p.b} V${k.cy - r} Q${x} ${k.cy} ${x + r} ${k.cy} H${end}`;
+          tip = `M${end - 11} ${k.cy - 8} L${end} ${k.cy} L${end - 11} ${k.cy + 8}`;
+        } else {
+          const y = p.b + (area.t - p.b) / 2, end = k.t - 3, dx = k.cx - p.cx;
+          const r = Math.min(16, Math.abs(dx) / 2, y - p.b), s = Math.sign(dx);
+          d = Math.abs(dx) < 1 ? `M${p.cx} ${p.b} V${end}`
+            : `M${p.cx} ${p.b} V${y - r} Q${p.cx} ${y} ${p.cx + s * r} ${y} H${k.cx - s * r} Q${k.cx} ${y} ${k.cx} ${y + r} V${end}`;
+          tip = `M${k.cx - 8} ${end - 11} L${k.cx} ${end} L${k.cx + 8} ${end - 11}`;
+        }
+        out += `<path d="${d}" stroke="${color}"/><path d="${tip}" stroke="${color}"/>`;
+      }
+    }
+    const svg = host.querySelector(':scope > svg.wires');
+    svg.setAttribute('width', box.width);
+    svg.setAttribute('height', box.height);
+    svg.innerHTML = `<g fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">${out}</g>`;
+  }
+}
 
 function row(item) {
   const preview = item.preview
@@ -189,6 +331,48 @@ ${Object.entries(PALETTE).map(([t, c]) => `.tone-${t}{--accent:${c.accent};--tin
 .preview-tag{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#96621e}
 .preview-tag svg{width:15px;height:15px}
 .preview p{margin:6px 0 0;font-size:16px;line-height:1.5;color:#4a4f5c;font-style:italic}
+.art.mini{width:30px;height:30px;border-radius:9px;box-shadow:none}.art.mini svg{width:18px;height:18px}.art.mini .letter{font-size:16px;letter-spacing:0}
+.art.big{width:150px;height:150px;border-radius:36px}.art.big svg{width:84px;height:84px}
+.ttext{flex:1;min-width:0}
+.tree{position:relative;display:flex;justify-content:center;align-items:flex-start;gap:48px}
+.wires{position:absolute;left:0;top:0;overflow:visible}
+.branch{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center}
+.kids{display:flex;align-items:flex-start;gap:40px;margin-top:88px}
+.branch.stack{align-items:stretch;width:420px}
+.branch.stack>.kids{flex-direction:column;align-items:stretch;gap:16px;margin-top:26px;padding-left:58px}
+.tnode{position:relative;display:flex;align-items:center;gap:18px;width:380px;padding:18px 20px;background:#fff;border-radius:22px;box-shadow:0 1px 0 #e6e4dc,0 10px 28px -18px rgba(31,36,48,.4)}
+.branch.stack>.tnode,.branch.stack>.kids .tnode{width:auto}
+.tnode .art.small{width:64px;height:64px;border-radius:18px}.tnode .art.small svg{width:34px;height:34px}
+.tnode .label{font-size:21px}.tnode .note{font-size:15.5px;margin-top:4px;-webkit-line-clamp:4}
+.tnode.d0{flex-direction:column;text-align:center;gap:12px;width:400px;padding:24px 24px 22px;box-shadow:0 0 0 10px #efede6,0 18px 40px -22px rgba(31,36,48,.55)}
+.tnode.d0 .art{width:96px;height:96px;border-radius:26px}.tnode.d0 .art svg{width:52px;height:52px}
+.tnode.d0 .label{font-size:28px}.tnode.d0 .note{font-size:17px}
+.tnode.d1{background:var(--wash);box-shadow:inset 0 0 0 2px var(--border),0 10px 28px -20px rgba(31,36,48,.4)}
+.tnode.d1 .label{font-size:23px;color:var(--accent)}
+.tnode.d2{border-left:7px solid var(--accent)}
+.tnum{position:absolute;top:-20px;left:-16px;width:46px;height:46px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-size:23px;font-weight:700;box-shadow:0 0 0 6px ${PAPER}}
+.tnode .stamp{position:absolute;top:-16px;right:-10px;padding:5px 12px 5px 9px;font-size:14px}
+.route{display:grid;grid-template-columns:repeat(var(--n),var(--col));row-gap:18px;align-items:center}
+.zone{display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px;margin:0 18px 18px;padding:26px 18px 22px;background:var(--wash);border-radius:30px;box-shadow:inset 0 0 0 2px var(--border)}
+.zone .label{font-size:28px;color:var(--accent)}.zone .note{font-size:16px}
+.life{align-self:stretch;position:relative}
+.life::before{content:"";position:absolute;left:50%;top:-36px;bottom:-24px;margin-left:-2px;border-left:4px dotted var(--line);opacity:.55}
+.act{position:relative;z-index:1;justify-self:center;display:flex;align-items:center;gap:16px;width:calc(var(--col) - 60px);padding:16px 18px 16px 22px;background:#fff;border-radius:20px;box-shadow:inset 0 0 0 2px var(--border),0 10px 26px -18px rgba(31,36,48,.45)}
+.act .label{font-size:20px}.act .note{font-size:15px;margin-top:3px}
+.snum{flex:none;width:36px;height:36px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-size:17px;font-weight:700}
+.act>.snum{position:absolute;top:-14px;left:-14px;box-shadow:0 0 0 5px ${PAPER}}
+.act .stamp{position:absolute;top:-15px;right:-10px;box-shadow:0 4px 12px -6px rgba(0,0,0,.3)}
+.act .stamp,.hop .stamp{padding:4px 11px 4px 8px;font-size:13px}.act .stamp svg,.hop .stamp svg{width:16px;height:16px}
+.hop{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;gap:10px;padding:8px calc(var(--col) / 2)}
+.hop-label{display:flex;align-items:center;gap:12px;max-width:100%;padding:6px 16px 6px 6px;background:${PAPER};border-radius:99px;font-size:20px;font-weight:700;letter-spacing:-.3px;line-height:1.25}
+.hop-line{position:relative;align-self:stretch;height:30px;color:var(--line)}
+.hop-line::before{content:"";position:absolute;left:4px;right:4px;top:50%;height:5px;margin-top:-2.5px;border-radius:5px;background:var(--line)}
+.hop-line::after{content:"";position:absolute;top:50%;width:16px;height:16px;margin-top:-8px;border-radius:50%;background:var(--line);box-shadow:0 0 0 5px ${PAPER}}
+.hop.right .hop-line::after{left:-6px}.hop.left .hop-line::after{right:-6px}
+.head{position:absolute;top:50%;width:22px;height:26px;margin-top:-13px}
+.hop.right .head{right:-6px}.hop.left .head{left:-6px;transform:scaleX(-1)}
+.via{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:inline-flex;align-items:center;gap:8px;padding:4px 14px 4px 5px;background:#fff;border-radius:99px;box-shadow:inset 0 0 0 2px var(--border);color:#1f2430;font-size:15px;font-weight:700;white-space:nowrap}
+.hop>.note{max-width:100%;text-align:center;font-size:15.5px;-webkit-line-clamp:2}
 `;
 
 export function buildHtml(spec) {
@@ -200,7 +384,8 @@ export function buildHtml(spec) {
   const { html, width } = LAYOUT[spec.layout](plan);
   const doc = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><style>${fonts()}${CSS}</style></head><body>
 <main class="canvas"><h1>${esc(spec.title)}</h1>${spec.subtitle ? `<p class="sub">${esc(spec.subtitle)}</p>` : ''}
-<div class="body">${html}</div><div class="mark">TERRA DRAW</div></main></body></html>`;
+<div class="body">${html}</div><div class="mark">TERRA DRAW</div></main>
+${html.includes('data-wires') ? `<script>window.__wire = ${wireTrees.toString()};</script>` : ''}</body></html>`;
   return { html: doc, width, icons: items.map(i => `${i.label} → ${i.art.kind === 'brand' ? `logo ${i.art.name}` : i.art.kind === 'letter' ? 'initiale' : i.art.name}`) };
 }
 
@@ -239,6 +424,7 @@ export async function draw(input, { outDir = DRAW_DIR } = {}) {
   await page.setViewportSize({ width: width + 40, height: 900 });
   await page.setContent(html, { waitUntil: 'load' });
   await page.evaluate(() => document.fonts.ready);
+  await page.evaluate(() => window.__wire?.());
   const now = new Date();
   const pad = n => String(n).padStart(2, '0');
   const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
