@@ -65,7 +65,7 @@ export function normalizeSpec(input = {}) {
       parent: ref(entry.parent),
       from: ref(entry.from),
       to: ref(entry.to),
-      via: clip(entry.via, 30)
+      via: clip(entry.via, 44)
     }))
     .filter(entry => entry.label);
   if (!items.length) throw new Error('items doit contenir au moins un élément avec un label.');
@@ -353,7 +353,7 @@ ${Object.entries(PALETTE).map(([t, c]) => `.tone-${t}{--accent:${c.accent};--tin
 .tnum{position:absolute;top:-20px;left:-16px;width:46px;height:46px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-size:23px;font-weight:700;box-shadow:0 0 0 6px ${PAPER}}
 .tnode .stamp{position:absolute;top:-16px;right:-10px;padding:5px 12px 5px 9px;font-size:14px}
 .route{display:grid;grid-template-columns:repeat(var(--n),var(--col));row-gap:18px;align-items:center}
-.zone{display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px;margin:0 18px 18px;padding:26px 18px 22px;background:var(--wash);border-radius:30px;box-shadow:inset 0 0 0 2px var(--border)}
+.zone{align-self:stretch;display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px;margin:0 18px 18px;padding:26px 18px 22px;background:var(--wash);border-radius:30px;box-shadow:inset 0 0 0 2px var(--border)}
 .zone .label{font-size:28px;color:var(--accent)}.zone .note{font-size:16px}
 .life{align-self:stretch;position:relative}
 .life::before{content:"";position:absolute;left:50%;top:-36px;bottom:-24px;margin-left:-2px;border-left:4px dotted var(--line);opacity:.55}
@@ -372,7 +372,7 @@ ${Object.entries(PALETTE).map(([t, c]) => `.tone-${t}{--accent:${c.accent};--tin
 .head{position:absolute;top:50%;width:22px;height:26px;margin-top:-13px}
 .hop.right .head{right:-6px}.hop.left .head{left:-6px;transform:scaleX(-1)}
 .via{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:inline-flex;align-items:center;gap:8px;padding:4px 14px 4px 5px;background:#fff;border-radius:99px;box-shadow:inset 0 0 0 2px var(--border);color:#1f2430;font-size:15px;font-weight:700;white-space:nowrap}
-.hop>.note{max-width:100%;text-align:center;font-size:15.5px;-webkit-line-clamp:2}
+.hop>.note{max-width:calc(100% - 40px);padding:2px 12px;background:${PAPER};border-radius:8px;text-align:center;font-size:15.5px;-webkit-line-clamp:2}
 `;
 
 export function buildHtml(spec) {
